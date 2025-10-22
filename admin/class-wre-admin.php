@@ -38,7 +38,7 @@ if ( ! class_exists( 'WRE_Admin' ) ) {
                 self::MENU_SLUG,
                 array( __CLASS__, 'render_admin_page' ),
                 'dashicons-email-alt2',
-                25
+                3
             );
         }
 

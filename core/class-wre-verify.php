@@ -32,6 +32,43 @@ if ( ! class_exists( 'WRE_Verify' ) ) {
         }
 
         /**
+         * Send the welcome + verification email to a newly registered user.
+         *
+         * @param int $user_id Newly created WordPress user identifier.
+         */
+        public static function send_verification_email( $user_id ) {
+            $user_id = absint( $user_id );
+
+            if ( $user_id <= 0 ) {
+                return;
+            }
+
+            $dispatched = false;
+
+            if ( class_exists( 'WRE_Email_Queue' ) ) {
+                $dispatched = \WRE_Email_Queue::add_to_queue( $user_id, 'welcome-verify' );
+            }
+
+            if ( ! $dispatched && class_exists( 'WRE_Email_Sender' ) ) {
+                $dispatched = \WRE_Email_Sender::send_welcome_verify( $user_id );
+
+                if ( $dispatched && class_exists( 'WRE_Logger' ) ) {
+                    \WRE_Logger::add(
+                        sprintf( 'Sent verification email immediately for user #%d.', $user_id ),
+                        'sent'
+                    );
+                }
+            }
+
+            if ( ! $dispatched && class_exists( 'WRE_Logger' ) ) {
+                \WRE_Logger::add(
+                    sprintf( 'Failed to dispatch verification email for user #%d.', $user_id ),
+                    'failed'
+                );
+            }
+        }
+
+        /**
          * Handle /verify endpoint requests with user and token query args.
          */
         public static function handle_verify_link() {
