@@ -22,25 +22,31 @@ if ( ! class_exists( 'WRE_Verify' ) ) {
         /**
          * Meta key storing the timestamp when a user verified their email.
          */
-        const META_VERIFIED_FLAG = '_wre_verified';
+        const META_VERIFIED_FLAG = 'wre_email_verified';
 
         /**
          * Wire up the request handler.
          */
         public static function init() {
             add_action( 'init', array( __CLASS__, 'handle_verify_link' ) );
+            add_action( 'template_redirect', array( __CLASS__, 'maybe_redirect_unverified_user' ), 0 );
+            add_filter( 'template_include', array( __CLASS__, 'maybe_render_verify_required_template' ) );
+            add_action( 'wp_enqueue_scripts', array( __CLASS__, 'enqueue_verify_required_assets' ) );
+            add_action( 'wp_ajax_wre_resend_verification', array( __CLASS__, 'handle_resend_verification' ) );
         }
 
         /**
          * Send the welcome + verification email to a newly registered user.
          *
          * @param int $user_id Newly created WordPress user identifier.
+         *
+         * @return bool Whether the verification email was dispatched.
          */
         public static function send_verification_email( $user_id ) {
             $user_id = absint( $user_id );
 
             if ( $user_id <= 0 ) {
-                return;
+                return false;
             }
 
             $dispatched = false;
@@ -66,6 +72,8 @@ if ( ! class_exists( 'WRE_Verify' ) ) {
                     'failed'
                 );
             }
+
+            return (bool) $dispatched;
         }
 
         /**
@@ -105,8 +113,7 @@ if ( ! class_exists( 'WRE_Verify' ) ) {
                 self::render_error();
             }
 
-            update_user_meta( $user_id, self::META_VERIFIED_FLAG, current_time( 'timestamp', true ) );
-            delete_user_meta( $user_id, self::META_VERIFY_TOKEN );
+            self::mark_user_verified( $user_id );
 
             self::maybe_login_user( $user_id );
 
@@ -166,6 +173,23 @@ if ( ! class_exists( 'WRE_Verify' ) ) {
         }
 
         /**
+         * Determine whether the current request is targeting the verify required endpoint.
+         *
+         * @return bool
+         */
+        protected static function is_verify_required_request() {
+            $request_uri  = filter_input( INPUT_SERVER, 'REQUEST_URI', FILTER_SANITIZE_URL );
+            $request_path = wp_parse_url( $request_uri, PHP_URL_PATH );
+            $verify_path  = wp_parse_url( self::get_verify_required_url(), PHP_URL_PATH );
+
+            if ( empty( $request_path ) || empty( $verify_path ) ) {
+                return false;
+            }
+
+            return untrailingslashit( $request_path ) === untrailingslashit( $verify_path );
+        }
+
+        /**
          * Confirm that a stored token is still within its allowed lifetime.
          *
          * @param int $generated Unix timestamp when the token was generated.
@@ -202,6 +226,218 @@ if ( ! class_exists( 'WRE_Verify' ) ) {
         }
 
         /**
+         * Evaluate whether the current user has verified their email address.
+         *
+         * @param int $user_id User identifier.
+         *
+         * @return bool
+         */
+        protected static function is_user_verified( $user_id ) {
+            $user_id = absint( $user_id );
+
+            if ( $user_id <= 0 ) {
+                return false;
+            }
+
+            $flag = get_user_meta( $user_id, self::META_VERIFIED_FLAG, true );
+
+            if ( is_numeric( $flag ) ) {
+                return absint( $flag ) > 0;
+            }
+
+            if ( is_bool( $flag ) ) {
+                return (bool) $flag;
+            }
+
+            if ( is_string( $flag ) && '' !== trim( $flag ) ) {
+                return true;
+            }
+
+            $legacy_flag = get_user_meta( $user_id, '_wre_verified', true );
+
+            if ( is_numeric( $legacy_flag ) && absint( $legacy_flag ) > 0 ) {
+                update_user_meta( $user_id, self::META_VERIFIED_FLAG, absint( $legacy_flag ) );
+                delete_user_meta( $user_id, '_wre_verified' );
+
+                return true;
+            }
+
+            if ( is_string( $legacy_flag ) && '' !== trim( $legacy_flag ) ) {
+                update_user_meta( $user_id, self::META_VERIFIED_FLAG, current_time( 'timestamp', true ) );
+                delete_user_meta( $user_id, '_wre_verified' );
+
+                return true;
+            }
+
+            return false;
+        }
+
+        /**
+         * Mark the given user as verified and clean up legacy metadata.
+         *
+         * @param int $user_id User identifier.
+         */
+        protected static function mark_user_verified( $user_id ) {
+            update_user_meta( $user_id, self::META_VERIFIED_FLAG, current_time( 'timestamp', true ) );
+            delete_user_meta( $user_id, self::META_VERIFY_TOKEN );
+            delete_user_meta( $user_id, '_wre_verified' );
+        }
+
+        /**
+         * Determine whether unverified users are allowed to view the current request.
+         *
+         * @return bool
+         */
+        protected static function is_unverified_request_allowed() {
+            $request_uri = filter_input( INPUT_SERVER, 'REQUEST_URI', FILTER_SANITIZE_URL );
+
+            if ( empty( $request_uri ) ) {
+                return false;
+            }
+
+            $allowed_substrings = array(
+                'wp-login.php',
+                'wp-cron.php',
+                'wp-json',
+                'logout',
+            );
+
+            foreach ( $allowed_substrings as $allowed ) {
+                if ( false !== strpos( $request_uri, $allowed ) ) {
+                    return true;
+                }
+            }
+
+            /**
+             * Filter whether the request should bypass the verification redirect.
+             *
+             * @param bool   $allowed     Whether the request is allowed.
+             * @param string $request_uri Current request URI.
+             */
+            return (bool) apply_filters( 'wre_verify_allow_unverified_request', false, $request_uri );
+        }
+
+        /**
+         * Redirect unverified logged-in users to the verification required screen.
+         */
+        public static function maybe_redirect_unverified_user() {
+            if ( is_admin() || wp_doing_ajax() || ( defined( 'REST_REQUEST' ) && REST_REQUEST ) ) {
+                return;
+            }
+
+            if ( ! is_user_logged_in() ) {
+                return;
+            }
+
+            $user_id = get_current_user_id();
+
+            if ( self::is_user_verified( $user_id ) ) {
+                if ( self::is_verify_required_request() ) {
+                    wp_safe_redirect( apply_filters( 'wre_verify_redirect', home_url( '/' ), $user_id ) );
+                    exit;
+                }
+
+                return;
+            }
+
+            if ( self::is_verify_request() || self::is_verify_required_request() ) {
+                return;
+            }
+
+            if ( self::is_unverified_request_allowed() ) {
+                return;
+            }
+
+            wp_safe_redirect( self::get_verify_required_url() );
+            exit;
+        }
+
+        /**
+         * Replace the template for the verification required screen when needed.
+         *
+         * @param string $template Current template path.
+         *
+         * @return string
+         */
+        public static function maybe_render_verify_required_template( $template ) {
+            if ( ! self::is_verify_required_request() ) {
+                return $template;
+            }
+
+            $plugin_template = trailingslashit( WRE_PATH ) . 'templates/verify-required.php';
+
+            if ( file_exists( $plugin_template ) ) {
+                return $plugin_template;
+            }
+
+            return $template;
+        }
+
+        /**
+         * Enqueue front-end assets for the verification required page.
+         */
+        public static function enqueue_verify_required_assets() {
+            if ( ! self::is_verify_required_request() ) {
+                return;
+            }
+
+            wp_enqueue_style( 'wre-verify-required', trailingslashit( WRE_URL ) . 'assets/css/verify-required.css', array(), WRE_VERSION );
+
+            wp_enqueue_script( 'wre-verify-required', trailingslashit( WRE_URL ) . 'assets/js/verify-required.js', array(), WRE_VERSION, true );
+
+            wp_localize_script(
+                'wre-verify-required',
+                'wreVerifyRequired',
+                array(
+                    'ajaxUrl'  => admin_url( 'admin-ajax.php' ),
+                    'nonce'    => wp_create_nonce( 'wre_resend_verification' ),
+                    'messages' => array(
+                        'sending'  => esc_html__( 'Sending verification email…', 'wisdom-rain-email-engine' ),
+                        'success'  => esc_html__( 'A new verification email is on its way!', 'wisdom-rain-email-engine' ),
+                        'failure'  => esc_html__( 'We were unable to resend the verification email. Please try again later.', 'wisdom-rain-email-engine' ),
+                        'verified' => esc_html__( 'Your email is already verified. You can continue to the homepage.', 'wisdom-rain-email-engine' ),
+                        'error'    => esc_html__( 'Something went wrong. Please refresh and try again.', 'wisdom-rain-email-engine' ),
+                    ),
+                )
+            );
+        }
+
+        /**
+         * Handle AJAX requests to resend the verification email.
+         */
+        public static function handle_resend_verification() {
+            check_ajax_referer( 'wre_resend_verification', 'nonce' );
+
+            if ( ! is_user_logged_in() ) {
+                wp_send_json_error(
+                    array( 'message' => esc_html__( 'You need to be logged in to request another verification email.', 'wisdom-rain-email-engine' ) ),
+                    403
+                );
+            }
+
+            $user_id = get_current_user_id();
+
+            if ( self::is_user_verified( $user_id ) ) {
+                wp_send_json_success(
+                    array( 'message' => esc_html__( 'Your email address is already verified.', 'wisdom-rain-email-engine' ) )
+                );
+            }
+
+            $sent = self::send_verification_email( $user_id );
+
+            if ( ! $sent ) {
+                wp_send_json_error(
+                    array( 'message' => esc_html__( 'Unable to send a new verification email.', 'wisdom-rain-email-engine' ) ),
+                    500
+                );
+            }
+
+            wp_send_json_success(
+                array( 'message' => esc_html__( 'Verification email dispatched.', 'wisdom-rain-email-engine' ) )
+            );
+        }
+
+        /**
          * Retrieve the verification endpoint URL for request checks.
          *
          * @return string
@@ -215,6 +451,22 @@ if ( ! class_exists( 'WRE_Verify' ) ) {
             }
 
             return $endpoint;
+        }
+
+        /**
+         * Retrieve the verify required URL for redirects and template detection.
+         *
+         * @return string
+         */
+        protected static function get_verify_required_url() {
+            $default = home_url( '/verify-required/' );
+            $url     = apply_filters( 'wre_verify_required_url', $default );
+
+            if ( ! is_string( $url ) || '' === trim( $url ) ) {
+                return $default;
+            }
+
+            return $url;
         }
     }
 }
