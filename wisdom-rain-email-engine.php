@@ -12,19 +12,6 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
 
-/**
- * Define constants
- */
-define( 'WRE_VERSION', '1.0.0' );
-define( 'WRE_PATH', plugin_dir_path( __FILE__ ) );
-define( 'WRE_URL',  plugin_dir_url( __FILE__ ) );
+require_once plugin_dir_path( __FILE__ ) . 'core/class-wre-core.php';
 
-/**
- * Autoload core classes
- */
-require_once WRE_PATH . 'core/class-wrpa-core.php';
-
-/**
- * Initialize the plugin
- */
-add_action( 'plugins_loaded', [ 'WRPA_Core', 'init' ] );
+WRE_Core::boot( __FILE__ );
