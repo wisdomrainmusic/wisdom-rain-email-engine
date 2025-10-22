@@ -55,6 +55,21 @@ if ( ! class_exists( 'WRE_Cron' ) ) {
         const EXPIRABLE_PLAN_IDS = array( 2895, 2894, 2893 );
 
         /**
+         * Meta key storing the custom subscription expiry timestamp.
+         */
+        const META_SUBSCRIPTION_EXPIRY = '_wre_subscription_expiry';
+
+        /**
+         * Meta key storing the human-readable subscription status.
+         */
+        const META_SUBSCRIPTION_STATUS = '_wre_subscription_status';
+
+        /**
+         * Subscription status label persisted when an account has expired.
+         */
+        const SUBSCRIPTION_STATUS_EXPIRED = 'expired';
+
+        /**
          * Number of days after registration to send a verification reminder.
          */
         const VERIFY_REMINDER_DELAY_DAYS = 3;
@@ -163,6 +178,8 @@ if ( ! class_exists( 'WRE_Cron' ) ) {
          * Execute subscription expiration checks shared by manual and scheduled runs.
          */
         public static function run_scheduled_tasks() {
+            self::scan_for_expired_users();
+
             $plans = self::get_expirable_plan_ids();
 
             if ( empty( $plans ) ) {
@@ -240,6 +257,92 @@ if ( ! class_exists( 'WRE_Cron' ) ) {
                         $user_id,
                         $product_id
                     );
+
+                    \WRE_Logger::add( $message, 'cron' );
+                }
+            }
+        }
+
+        /**
+         * Detect locally-tracked subscriptions whose expiry has passed and notify users.
+         */
+        public static function scan_for_expired_users() {
+            if ( ! class_exists( 'WRE_Email_Queue' ) ) {
+                return;
+            }
+
+            if ( ! self::can_queue_more() ) {
+                return;
+            }
+
+            $query_args = apply_filters(
+                'wre_cron_local_expiration_query_args',
+                array(
+                    'fields'     => 'ids',
+                    'number'     => -1,
+                    'meta_query' => array(
+                        array(
+                            'key'     => self::META_SUBSCRIPTION_EXPIRY,
+                            'compare' => 'EXISTS',
+                        ),
+                    ),
+                )
+            );
+
+            $users = get_users( $query_args );
+
+            if ( empty( $users ) ) {
+                return;
+            }
+
+            $now = current_time( 'timestamp', true );
+
+            foreach ( $users as $user ) {
+                if ( ! self::can_queue_more() ) {
+                    break;
+                }
+
+                $user_id = self::normalize_user_id( $user );
+
+                if ( $user_id <= 0 ) {
+                    continue;
+                }
+
+                $expires = self::normalize_timestamp( get_user_meta( $user_id, self::META_SUBSCRIPTION_EXPIRY, true ) );
+
+                if ( $expires <= 0 || $expires > $now ) {
+                    continue;
+                }
+
+                $status = get_user_meta( $user_id, self::META_SUBSCRIPTION_STATUS, true );
+
+                if ( self::SUBSCRIPTION_STATUS_EXPIRED === $status ) {
+                    continue;
+                }
+
+                update_user_meta( $user_id, self::META_SUBSCRIPTION_STATUS, self::SUBSCRIPTION_STATUS_EXPIRED );
+
+                $queued = self::queue_email(
+                    'subscription-expired',
+                    $user_id,
+                    array(
+                        'expired_at' => $expires,
+                        'source'     => 'wre_cron',
+                    )
+                );
+
+                if ( class_exists( 'WRE_Logger' ) ) {
+                    if ( $queued ) {
+                        $message = sprintf(
+                            '[CRON] Queued subscription-expired email for user #%1$d.',
+                            $user_id
+                        );
+                    } else {
+                        $message = sprintf(
+                            '[CRON] Unable to queue subscription-expired email for user #%1$d; limit reached.',
+                            $user_id
+                        );
+                    }
 
                     \WRE_Logger::add( $message, 'cron' );
                 }
@@ -490,7 +593,7 @@ if ( ! class_exists( 'WRE_Cron' ) ) {
                 return false;
             }
 
-            $queued = \WRE_Email_Queue::add_to_queue( $user_id, $template, $context );
+            $queued = \WRE_Email_Queue::queue_email( $user_id, $template, $context );
 
             if ( ! $queued ) {
                 return false;
