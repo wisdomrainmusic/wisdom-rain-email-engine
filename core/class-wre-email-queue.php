@@ -84,13 +84,10 @@ if ( ! class_exists( 'WRE_Email_Queue' ) ) {
             self::save_queue( $queue );
 
             if ( class_exists( 'WRE_Logger' ) ) {
-                \WRE_Logger::add(
-                    sprintf( 'Queued "%s" email for user #%d.', $template, $user_id ),
-                    'queue'
-                );
-            } else {
-                self::log( sprintf( 'Queued %s email for user #%d.', $template, $user_id ) );
+                \WRE_Logger::increment( 'queue' );
             }
+
+            self::log( sprintf( 'Queued "%s" email for user #%d.', $template, $user_id ), 'queue' );
 
             self::schedule_next_run();
 

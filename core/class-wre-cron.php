@@ -40,6 +40,21 @@ if ( ! class_exists( 'WRE_Cron' ) ) {
         const MAX_QUEUE_PER_RUN = 100;
 
         /**
+         * WRPA meta key storing the most recent product identifier.
+         */
+        const META_WRPA_LAST_PRODUCT = 'wrpa_last_product_id';
+
+        /**
+         * WRPA meta key storing the subscription expiration timestamp.
+         */
+        const META_WRPA_SUBSCRIPTION_END = 'wrpa_subscription_end';
+
+        /**
+         * Plan identifiers that should trigger subscription expiration handling.
+         */
+        const EXPIRABLE_PLAN_IDS = array( 2895, 2894, 2893 );
+
+        /**
          * Number of days after registration to send a verification reminder.
          */
         const VERIFY_REMINDER_DELAY_DAYS = 3;
@@ -67,6 +82,7 @@ if ( ! class_exists( 'WRE_Cron' ) ) {
         public static function init() {
             add_action( self::CRON_HOOK, array( __CLASS__, 'run_tasks' ) );
             add_action( 'init', array( __CLASS__, 'ensure_schedule' ) );
+            add_action( 'wre_run_scheduled_tasks', array( __CLASS__, 'run_scheduled_tasks' ) );
         }
 
         /**
@@ -130,6 +146,8 @@ if ( ! class_exists( 'WRE_Cron' ) ) {
                 \WRE_Email_Queue::process_queue();
             }
 
+            do_action( 'wre_run_scheduled_tasks' );
+
             if ( class_exists( 'WRE_Logger' ) ) {
                 $summary = sprintf(
                     /* translators: %d: number of email jobs queued during the cron run */
@@ -137,7 +155,94 @@ if ( ! class_exists( 'WRE_Cron' ) ) {
                     absint( self::$queued_during_run )
                 );
 
-                \WRE_Logger::add( $summary, 'cron' );
+                \WRE_Logger::add( '[CRON] ' . $summary, 'cron' );
+            }
+        }
+
+        /**
+         * Execute subscription expiration checks shared by manual and scheduled runs.
+         */
+        public static function run_scheduled_tasks() {
+            $plans = self::get_expirable_plan_ids();
+
+            if ( empty( $plans ) ) {
+                return;
+            }
+
+            if ( class_exists( 'WRE_Logger' ) ) {
+                \WRE_Logger::increment( 'cron' );
+            }
+
+            $query_args = apply_filters(
+                'wre_cron_expiration_query_args',
+                array(
+                    'fields'     => 'ids',
+                    'number'     => -1,
+                    'meta_query' => array(
+                        array(
+                            'key'     => self::META_WRPA_LAST_PRODUCT,
+                            'value'   => $plans,
+                            'compare' => 'IN',
+                        ),
+                        array(
+                            'key'     => self::META_WRPA_SUBSCRIPTION_END,
+                            'compare' => 'EXISTS',
+                        ),
+                    ),
+                )
+            );
+
+            $users = get_users( $query_args );
+
+            if ( empty( $users ) ) {
+                return;
+            }
+
+            $now = current_time( 'timestamp', true );
+
+            foreach ( $users as $user ) {
+                $user_id = self::normalize_user_id( $user );
+
+                if ( $user_id <= 0 ) {
+                    continue;
+                }
+
+                $product_id = absint( get_user_meta( $user_id, self::META_WRPA_LAST_PRODUCT, true ) );
+
+                if ( ! in_array( $product_id, $plans, true ) ) {
+                    continue;
+                }
+
+                $expires = self::normalize_timestamp( get_user_meta( $user_id, self::META_WRPA_SUBSCRIPTION_END, true ) );
+
+                if ( $expires <= 0 || $expires > $now ) {
+                    continue;
+                }
+
+                $context = array(
+                    'product_id'       => $product_id,
+                    'subscription_end' => $expires,
+                    'triggered_at'     => $now,
+                    'triggered_by'     => 'wre_cron',
+                );
+
+                /**
+                 * Fires when the WRE cron determines a WRPA subscription has expired.
+                 *
+                 * @param int   $user_id WordPress user identifier.
+                 * @param array $context Supplemental data describing the expiration.
+                 */
+                do_action( 'wrpa_subscription_expired', $user_id, $context );
+
+                if ( class_exists( 'WRE_Logger' ) ) {
+                    $message = sprintf(
+                        '[CRON] Subscription expired for user #%1$d (plan #%2$d).',
+                        $user_id,
+                        $product_id
+                    );
+
+                    \WRE_Logger::add( $message, 'cron' );
+                }
             }
         }
 
@@ -449,6 +554,53 @@ if ( ! class_exists( 'WRE_Cron' ) ) {
 
             if ( is_array( $user ) && isset( $user['ID'] ) ) {
                 return absint( $user['ID'] );
+            }
+
+            return 0;
+        }
+
+        /**
+         * Return the list of WRPA plan IDs that should be considered for expirations.
+         *
+         * @return array<int>
+         */
+        protected static function get_expirable_plan_ids() {
+            $plans = apply_filters( 'wre_cron_expirable_plan_ids', self::EXPIRABLE_PLAN_IDS );
+
+            if ( empty( $plans ) ) {
+                return array();
+            }
+
+            $plans = array_filter(
+                array_map( 'absint', (array) $plans ),
+                function ( $plan ) {
+                    return $plan > 0;
+                }
+            );
+
+            return array_values( array_unique( $plans ) );
+        }
+
+        /**
+         * Normalise a timestamp stored in user meta.
+         *
+         * @param mixed $value Raw meta value retrieved from storage.
+         *
+         * @return int
+         */
+        protected static function normalize_timestamp( $value ) {
+            if ( is_numeric( $value ) ) {
+                $value = (int) $value;
+
+                return $value > 0 ? $value : 0;
+            }
+
+            if ( is_string( $value ) && '' !== trim( $value ) ) {
+                $timestamp = strtotime( $value );
+
+                if ( false !== $timestamp ) {
+                    return (int) $timestamp;
+                }
             }
 
             return 0;
