@@ -142,6 +142,7 @@ if ( ! class_exists( 'WRE_Core' ) ) {
                 'core/class-wre-passwords.php',
                 'core/class-wre-consent.php',
                 'core/class-wre-orders.php',
+                'core/class-wre-trials.php',
             );
 
             foreach ( $dependencies as $relative_path ) {
@@ -211,6 +212,10 @@ if ( ! class_exists( 'WRE_Core' ) ) {
 
             if ( class_exists( 'WRE_Orders' ) ) {
                 \WRE_Orders::init();
+            }
+
+            if ( class_exists( 'WRE_Trials' ) ) {
+                \WRE_Trials::init();
             }
         }
 

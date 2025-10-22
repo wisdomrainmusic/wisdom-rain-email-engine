@@ -187,11 +187,11 @@ if ( ! class_exists( 'WRE_Admin' ) ) {
                 return;
             }
 
-            $next_run          = class_exists( 'WRE_Cron' ) ? wp_next_scheduled( \WRE_Cron::CRON_HOOK ) : false;
-            $now               = current_time( 'timestamp' );
-            $is_due_now        = $next_run && $next_run <= $now;
-            $has_pending_trials = class_exists( 'WRE_Orders' ) && \WRE_Orders::has_pending_trial_jobs();
-            $last_order_id     = class_exists( 'WRE_Orders' ) ? \WRE_Orders::get_last_order_id() : 0;
+            $next_run      = class_exists( 'WRE_Cron' ) ? wp_next_scheduled( \WRE_Cron::CRON_HOOK ) : false;
+            $now           = current_time( 'timestamp' );
+            $is_due_now    = $next_run && $next_run <= $now;
+            $last_order_id = class_exists( 'WRE_Orders' ) ? \WRE_Orders::get_last_order_id() : 0;
+            $last_trial    = class_exists( 'WRE_Trials' ) ? \WRE_Trials::get_last_expiration() : array();
 
             echo '<p>' . esc_html__( 'Trigger maintenance helpers that operate on existing queues and reminders.', 'wisdom-rain-email-engine' ) . '</p>';
 
@@ -225,7 +225,7 @@ if ( ! class_exists( 'WRE_Admin' ) ) {
             );
             echo '</form>';
 
-            $help_text = __( 'This manual trigger runs due jobs immediately. Trial expiration notices are dispatched if they are waiting, even when the next schedule time has not yet arrived.', 'wisdom-rain-email-engine' );
+            $help_text = __( 'This manual trigger runs due jobs immediately. Use it to verify reminder campaigns without waiting for the next scheduled window.', 'wisdom-rain-email-engine' );
             echo '<p id="wre-run-now-help" class="description">' . esc_html( $help_text ) . '</p>';
             echo '</div>';
 
@@ -238,10 +238,18 @@ if ( ! class_exists( 'WRE_Admin' ) ) {
                 echo '<p>' . esc_html__( 'No completed orders detected yet for replay.', 'wisdom-rain-email-engine' ) . '</p>';
             }
 
-            if ( $has_pending_trials ) {
-                echo '<p>' . esc_html__( 'Trial-expired emails are waiting to be sent and will be dispatched in this test run.', 'wisdom-rain-email-engine' ) . '</p>';
+            if ( ! empty( $last_trial ) && ! empty( $last_trial['user_id'] ) ) {
+                $trial_user = absint( $last_trial['user_id'] );
+                $recorded   = isset( $last_trial['recorded_at'] ) ? absint( $last_trial['recorded_at'] ) : 0;
+
+                if ( $recorded > 0 ) {
+                    $formatted = date_i18n( get_option( 'date_format' ) . ' ' . get_option( 'time_format' ), $recorded );
+                    echo '<p>' . esc_html( sprintf( /* translators: 1: user ID, 2: recorded datetime. */ __( 'Most recent expired trial: user #%1$d on %2$s.', 'wisdom-rain-email-engine' ), $trial_user, $formatted ) ) . '</p>';
+                } else {
+                    echo '<p>' . esc_html( sprintf( __( 'Most recent expired trial recorded for user #%d.', 'wisdom-rain-email-engine' ), $trial_user ) ) . '</p>';
+                }
             } else {
-                echo '<p>' . esc_html__( 'No pending trial-expired emails are currently queued.', 'wisdom-rain-email-engine' ) . '</p>';
+                echo '<p>' . esc_html__( 'No expired trials detected yet for replay.', 'wisdom-rain-email-engine' ) . '</p>';
             }
 
             echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '">';
@@ -258,7 +266,7 @@ if ( ! class_exists( 'WRE_Admin' ) ) {
             );
             echo '</form>';
 
-            echo '<p id="wre-realtime-help" class="description">' . esc_html__( 'Resends the latest order confirmation and any queued trial-expired notices immediately for verification.', 'wisdom-rain-email-engine' ) . '</p>';
+            echo '<p id="wre-realtime-help" class="description">' . esc_html__( 'Resends the latest order confirmation and most recent trial expiration notice instantly for verification.', 'wisdom-rain-email-engine' ) . '</p>';
             echo '</div>';
         }
 
@@ -317,10 +325,9 @@ if ( ! class_exists( 'WRE_Admin' ) ) {
                 exit;
             }
 
-            $current_time       = current_time( 'timestamp' );
-            $has_pending_trials = class_exists( 'WRE_Orders' ) && \WRE_Orders::has_pending_trial_jobs();
+            $current_time = current_time( 'timestamp' );
 
-            if ( $next_run > $current_time && ! $has_pending_trials ) {
+            if ( $next_run > $current_time ) {
                 $formatted = date_i18n( get_option( 'date_format' ) . ' ' . get_option( 'time_format' ), $next_run );
                 self::persist_tools_notice(
                     'wre_tools_not_due',
@@ -329,12 +336,6 @@ if ( ! class_exists( 'WRE_Admin' ) ) {
                 );
                 wp_safe_redirect( $redirect );
                 exit;
-            }
-
-            $trial_dispatches = 0;
-
-            if ( class_exists( 'WRE_Orders' ) ) {
-                $trial_dispatches = \WRE_Orders::process_pending_trial_jobs( true );
             }
 
             if ( $next_run ) {
@@ -352,39 +353,20 @@ if ( ! class_exists( 'WRE_Admin' ) ) {
 
             if ( class_exists( 'WRE_Logger' ) ) {
                 $log_message = sprintf(
-                    /* translators: 1: user ID, 2: forced run time, 3: scheduled time, 4: number of trial emails */
-                    __( 'Manual cron run triggered by user #%1$d at %2$s. Original schedule was due at %3$s. Trial expirations dispatched: %4$d.', 'wisdom-rain-email-engine' ),
+                    /* translators: 1: user ID, 2: forced run time, 3: scheduled time */
+                    __( 'Manual cron run triggered by user #%1$d at %2$s. Original schedule was due at %3$s.', 'wisdom-rain-email-engine' ),
                     absint( $user_id ),
                     $forced_stamp,
-                    $due_stamp,
-                    absint( $trial_dispatches )
+                    $due_stamp
                 );
 
                 \WRE_Logger::add( $log_message, 'cron' );
             }
 
-            $notice_parts = array();
-
-            if ( $has_pending_trials ) {
-                if ( $trial_dispatches > 0 ) {
-                    $notice_parts[] = sprintf(
-                        /* translators: %d: number of trial emails dispatched */
-                        _n( 'Dispatched %d trial-expired email immediately.', 'Dispatched %d trial-expired emails immediately.', $trial_dispatches, 'wisdom-rain-email-engine' ),
-                        $trial_dispatches
-                    );
-                } else {
-                    $notice_parts[] = __( 'Trial-expired emails remain queued. Check logs for delivery attempts.', 'wisdom-rain-email-engine' );
-                }
-            }
-
-            $notice_parts[] = __( 'Due scheduled tasks were executed successfully. Future-dated campaigns remain queued for their original send times.', 'wisdom-rain-email-engine' );
-
-            $notice_type = ( $has_pending_trials && 0 === $trial_dispatches ) ? 'error' : 'updated';
-
             self::persist_tools_notice(
                 'wre_tools_success',
-                implode( ' ', $notice_parts ),
-                $notice_type
+                __( 'Due scheduled tasks were executed successfully. Future-dated campaigns remain queued for their original send times.', 'wisdom-rain-email-engine' ),
+                'updated'
             );
 
             wp_safe_redirect( $redirect );
@@ -423,36 +405,36 @@ if ( ! class_exists( 'WRE_Admin' ) ) {
                 exit;
             }
 
-            if ( ! class_exists( 'WRE_Orders' ) ) {
+            if ( ! class_exists( 'WRE_Orders' ) && ! class_exists( 'WRE_Trials' ) ) {
                 self::persist_tools_notice(
                     'wre_tools_event_missing',
-                    __( 'Orders module is unavailable. Real-time tests cannot run.', 'wisdom-rain-email-engine' ),
+                    __( 'Orders and trials modules are unavailable. Real-time tests cannot run.', 'wisdom-rain-email-engine' ),
                     'error'
                 );
                 wp_safe_redirect( $redirect );
                 exit;
             }
 
-            $results = \WRE_Orders::run_manual_tests();
+            $type          = 'updated';
+            $order_result  = class_exists( 'WRE_Orders' ) ? \WRE_Orders::replay_last_confirmation() : null;
+            $trial_result  = class_exists( 'WRE_Trials' ) ? \WRE_Trials::replay_last_expiration_notice() : null;
 
             $order_message = __( 'No completed orders detected for replay.', 'wisdom-rain-email-engine' );
-            $type          = 'updated';
 
-            if ( true === $results['order'] ) {
+            if ( true === $order_result ) {
                 $order_message = __( 'Latest order confirmation email sent successfully.', 'wisdom-rain-email-engine' );
-            } elseif ( false === $results['order'] ) {
+            } elseif ( false === $order_result ) {
                 $order_message = __( 'Order confirmation replay failed. Check logs for details.', 'wisdom-rain-email-engine' );
                 $type          = 'error';
             }
 
-            $trial_message = __( 'No pending trial-expired emails were queued.', 'wisdom-rain-email-engine' );
+            $trial_message = __( 'No trial expiration events available for replay.', 'wisdom-rain-email-engine' );
 
-            if ( $results['trials'] > 0 ) {
-                $trial_message = sprintf(
-                    /* translators: %d: number of trial emails dispatched */
-                    _n( 'Dispatched %d trial-expired email.', 'Dispatched %d trial-expired emails.', $results['trials'], 'wisdom-rain-email-engine' ),
-                    $results['trials']
-                );
+            if ( true === $trial_result ) {
+                $trial_message = __( 'Latest trial expiration notice sent successfully.', 'wisdom-rain-email-engine' );
+            } elseif ( false === $trial_result ) {
+                $trial_message = __( 'Trial expiration notice replay failed. Check logs for details.', 'wisdom-rain-email-engine' );
+                $type          = 'error';
             }
 
             self::persist_tools_notice(

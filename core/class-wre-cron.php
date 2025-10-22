@@ -105,10 +105,6 @@ if ( ! class_exists( 'WRE_Cron' ) ) {
         public static function run_tasks() {
             self::$queued_during_run = 0;
 
-            if ( class_exists( 'WRE_Orders' ) ) {
-                \WRE_Orders::process_pending_trial_jobs();
-            }
-
             if ( self::can_queue_more() ) {
                 self::queue_verify_reminders();
             }
