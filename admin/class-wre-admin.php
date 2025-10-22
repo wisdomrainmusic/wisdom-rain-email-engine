@@ -75,11 +75,19 @@ if ( ! class_exists( 'WRE_Admin' ) ) {
                 </h2>
 
                 <?php settings_errors( 'wre_templates' ); ?>
+                <?php settings_errors( 'wre_campaigns' ); ?>
 
                 <?php
                 switch ( $current_tab ) {
                     case 'templates':
                         self::render_templates_tab();
+                        break;
+                    case 'campaigns':
+                        if ( class_exists( 'WRE_Campaigns' ) ) {
+                            \WRE_Campaigns::render_admin_tab();
+                        } else {
+                            self::render_placeholder_tab( $tabs[ $current_tab ] );
+                        }
                         break;
                     default:
                         self::render_placeholder_tab( $tabs[ $current_tab ] );
