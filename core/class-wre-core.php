@@ -119,8 +119,8 @@ if ( ! class_exists( 'WRE_Core' ) ) {
                 'core/class-wre-email-sender.php',
                 'core/class-wre-verify.php',
                 'core/class-wre-templates.php',
+                'core/class-wre-email-queue.php',
                 'core/class-wre-cron.php',
-                'includes/class-wre-email-queue.php',
             );
 
             foreach ( $dependencies as $relative_path ) {
