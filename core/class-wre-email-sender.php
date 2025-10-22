@@ -73,7 +73,7 @@ if ( ! class_exists( 'WRE_Email_Sender' ) ) {
                 return false;
             }
 
-            return wp_mail( $email, $subject, $body, self::get_default_headers() );
+            return self::dispatch_email( 'welcome-verify', $user_id, $email, $subject, $body );
         }
 
         /**
@@ -139,7 +139,7 @@ if ( ! class_exists( 'WRE_Email_Sender' ) ) {
                 return false;
             }
 
-            return wp_mail( $email, $subject, $body, self::get_default_headers() );
+            return self::dispatch_email( 'plan-reminder', $user_id, $email, $subject, $body );
         }
 
         /**
@@ -187,7 +187,7 @@ if ( ! class_exists( 'WRE_Email_Sender' ) ) {
                 return false;
             }
 
-            return wp_mail( $email, $subject, $body, self::get_default_headers() );
+            return self::dispatch_email( 'comeback', $user_id, $email, $subject, $body );
         }
 
         /**
@@ -251,7 +251,43 @@ if ( ! class_exists( 'WRE_Email_Sender' ) ) {
                 return false;
             }
 
-            return wp_mail( $email, $subject, $body, self::get_default_headers() );
+            return self::dispatch_email( 'verify-reminder', $user_id, $email, $subject, $body );
+        }
+
+        /**
+         * Dispatch an email and record the outcome for logging purposes.
+         *
+         * @param string $template Template identifier.
+         * @param int    $user_id  WordPress user identifier.
+         * @param string $email    Recipient email address.
+         * @param string $subject  Email subject line.
+         * @param string $body     Email body content.
+         *
+         * @return bool
+         */
+        protected static function dispatch_email( $template, $user_id, $email, $subject, $body ) {
+            if ( '' === $body ) {
+                return false;
+            }
+
+            $result = wp_mail( $email, $subject, $body, self::get_default_headers() );
+
+            if ( class_exists( 'WRE_Logger' ) ) {
+                $template = sanitize_key( $template );
+                $user_id  = absint( $user_id );
+
+                if ( $result ) {
+                    $message = sprintf( 'Email "%s" sent for user #%d.', $template, $user_id );
+                    $type    = 'sent';
+                } else {
+                    $message = sprintf( 'Email "%s" failed for user #%d.', $template, $user_id );
+                    $type    = 'failed';
+                }
+
+                \WRE_Logger::add( $message, $type );
+            }
+
+            return (bool) $result;
         }
 
         /**
