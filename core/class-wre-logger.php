@@ -71,6 +71,9 @@ if ( ! class_exists( 'WRE_Logger' ) ) {
                 'queue'   => 0,
                 'cron'    => 0,
                 'instant' => 0,
+                'order'   => 0,
+                'trial'   => 0,
+                'verify'  => 0,
                 'total'   => 0,
             );
 
@@ -104,6 +107,15 @@ if ( ! class_exists( 'WRE_Logger' ) ) {
                         break;
                     case 'INSTANT':
                         $totals['instant']++;
+                        break;
+                    case 'ORDER':
+                        $totals['order']++;
+                        break;
+                    case 'TRIAL':
+                        $totals['trial']++;
+                        break;
+                    case 'VERIFY':
+                        $totals['verify']++;
                         break;
                     default:
                         break;

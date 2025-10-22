@@ -68,7 +68,7 @@ if ( ! class_exists( 'WRE_Verify' ) ) {
             if ( ! $dispatched && class_exists( 'WRE_Logger' ) ) {
                 \WRE_Logger::add(
                     sprintf( 'Failed to dispatch verification email for user #%d.', $user_id ),
-                    'failed'
+                    'verify'
                 );
             }
 

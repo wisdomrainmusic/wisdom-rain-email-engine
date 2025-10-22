@@ -39,6 +39,10 @@ if ( ! class_exists( 'WRE_Templates' ) ) {
                     'label'       => __( 'Payment Receipt', 'wisdom-rain-email-engine' ),
                     'description' => __( 'Provides a receipt after a successful payment.', 'wisdom-rain-email-engine' ),
                 ),
+                'trial-expired'         => array(
+                    'label'       => __( 'Trial Expired', 'wisdom-rain-email-engine' ),
+                    'description' => __( 'Informs members that their trial access has ended.', 'wisdom-rain-email-engine' ),
+                ),
                 'event-invite'          => array(
                     'label'       => __( 'Event Invitation', 'wisdom-rain-email-engine' ),
                     'description' => __( 'Invites users to upcoming Wisdom Rain experiences.', 'wisdom-rain-email-engine' ),
