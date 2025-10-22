@@ -97,6 +97,21 @@ if ( ! class_exists( 'WRE_Core' ) ) {
          */
         public static function init() {
             self::load_dependencies();
+
+            /**
+             * 🔗 Bridge WRPA signup → WRE Verify
+             * When a new user registers, send them the combined Welcome + Verify email.
+             */
+            if ( class_exists( 'WRE_Verify' ) && method_exists( 'WRE_Verify', 'send_verification_email' ) ) {
+                add_action( 'user_register', array( 'WRE_Verify', 'send_verification_email' ), 10, 1 );
+
+                if ( class_exists( 'WRE_Logger' ) ) {
+                    \WRE_Logger::add( 'Hooked user_register → send_verification_email bridge active.' );
+                }
+            } elseif ( class_exists( 'WRE_Logger' ) ) {
+                \WRE_Logger::add( 'Unable to bridge user_register; WRE_Verify::send_verification_email unavailable.', 'failed' );
+            }
+
             self::initialize_modules();
 
             add_action( 'admin_notices', array( __CLASS__, 'test_notice' ) );
