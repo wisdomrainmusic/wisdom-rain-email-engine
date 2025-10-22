@@ -52,6 +52,19 @@ if ( ! class_exists( 'WRE_Email_Queue' ) ) {
         }
 
         /**
+         * Queue an email job. Alias for add_to_queue() to improve readability.
+         *
+         * @param int    $user_id  WordPress user identifier.
+         * @param string $template Email template slug to dispatch.
+         * @param array  $context  Optional context passed to the template sender.
+         *
+         * @return bool
+         */
+        public static function queue_email( $user_id, $template, $context = array() ) {
+            return self::add_to_queue( $user_id, $template, $context );
+        }
+
+        /**
          * Add a new job to the queue.
          *
          * @param int    $user_id  WordPress user identifier.
