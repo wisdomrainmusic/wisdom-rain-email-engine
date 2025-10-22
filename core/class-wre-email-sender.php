@@ -57,18 +57,14 @@ if ( ! class_exists( 'WRE_Email_Sender' ) ) {
 
             $subject = __( 'Verify your Wisdom Rain email', 'wisdom-rain-email-engine' );
 
+            $display_name = $user->display_name ? $user->display_name : $user->user_login;
+
             $placeholders = array(
-                'EMAIL_TITLE'       => sprintf(
-                    /* translators: %s: User display name. */
-                    __( 'Welcome, %s!', 'wisdom-rain-email-engine' ),
-                    $user->display_name ? $user->display_name : $user->user_login
-                ),
-                'EMAIL_BODY'        => __( 'Please confirm your email address to activate your Wisdom Rain experience.', 'wisdom-rain-email-engine' ),
-                'EMAIL_BUTTON_TEXT' => __( 'Verify Email', 'wisdom-rain-email-engine' ),
-                'EMAIL_BUTTON_LINK' => $verify_url,
+                'recipient_name'   => sanitize_text_field( $display_name ),
+                'verification_url' => esc_url( $verify_url ),
             );
 
-            $body = self::render_template( 'email-welcome-verify', $placeholders );
+            $body = self::render_template( 'welcome-verify', $placeholders );
 
             if ( empty( $body ) ) {
                 return false;
@@ -150,45 +146,11 @@ if ( ! class_exists( 'WRE_Email_Sender' ) ) {
          * @return string
          */
         protected static function render_template( $template, $placeholders ) {
-            if ( ! defined( 'WRE_PATH' ) ) {
+            if ( ! class_exists( '\WRE_Templates' ) ) {
                 return '';
             }
 
-            $defaults = array(
-                'EMAIL_TITLE'       => '',
-                'EMAIL_BODY'        => '',
-                'EMAIL_BUTTON_TEXT' => '',
-                'EMAIL_BUTTON_LINK' => '',
-            );
-
-            $context = wp_parse_args( $placeholders, $defaults );
-
-            $template_slug = sanitize_key( basename( $template ) );
-            $template_path = trailingslashit( WRE_PATH ) . 'templates/emails/' . $template_slug . '.php';
-
-            if ( ! file_exists( $template_path ) ) {
-                return sprintf(
-                    '<h1>%1$s</h1><p>%2$s</p>',
-                    esc_html( $context['EMAIL_TITLE'] ),
-                    esc_html( $context['EMAIL_BODY'] )
-                );
-            }
-
-            ob_start();
-
-            // Expose placeholders as template variables while preserving array access.
-            $data = $context;
-            foreach ( $context as $key => $value ) {
-                if ( ! isset( ${$key} ) ) {
-                    ${$key} = $value;
-                }
-            }
-
-            include $template_path;
-
-            $contents = ob_get_clean();
-
-            return is_string( $contents ) ? trim( $contents ) : '';
+            return \WRE_Templates::render_template( $template, $placeholders );
         }
     }
 }
