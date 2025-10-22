@@ -341,6 +341,11 @@ if ( ! class_exists( 'WRE_Verify' ) ) {
 
             $user_id = get_current_user_id();
 
+            // Administrators retain access even if their email is unverified to prevent lockouts.
+            if ( current_user_can( 'manage_options' ) ) {
+                return;
+            }
+
             if ( self::is_user_verified( $user_id ) ) {
                 if ( self::is_verify_required_request() ) {
                     wp_safe_redirect( apply_filters( 'wre_verify_redirect', home_url( '/' ), $user_id ) );
