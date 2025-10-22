@@ -97,8 +97,13 @@ if ( ! class_exists( 'WRE_Core' ) ) {
          * Load PHP classes required for plugin execution.
          */
         protected static function load_dependencies() {
+            if ( ! defined( 'WRE_PATH' ) ) {
+                return;
+            }
+
             $dependencies = array(
                 'admin/class-wrpa-admin.php',
+                'admin/class-wre-admin.php',
                 'core/class-wrpa-codex-command.php',
                 'includes/class-wre-email.php',
                 'includes/class-wre-queue.php',
@@ -106,7 +111,7 @@ if ( ! class_exists( 'WRE_Core' ) ) {
             );
 
             foreach ( $dependencies as $relative_path ) {
-                $absolute_path = trailingslashit( WRE_PATH ) . ltrim( $relative_path, '/' );
+                $absolute_path = WRE_PATH . ltrim( $relative_path, '/' );
 
                 if ( file_exists( $absolute_path ) ) {
                     require_once $absolute_path;
@@ -118,8 +123,12 @@ if ( ! class_exists( 'WRE_Core' ) ) {
          * Call initialization routines for loaded modules when available.
          */
         protected static function initialize_modules() {
-            if ( class_exists( 'WRPA_Admin' ) && is_admin() ) {
+            if ( class_exists( 'WRPA_Admin' ) ) {
                 \WRPA_Admin::init();
+            }
+
+            if ( class_exists( 'WRE_Admin' ) ) {
+                \WRE_Admin::init();
             }
 
             if ( class_exists( 'WRPA_Codex_Command' ) && defined( 'WP_CLI' ) && WP_CLI ) {
