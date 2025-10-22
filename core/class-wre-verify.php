@@ -42,28 +42,27 @@ if ( ! class_exists( 'WRE_Verify' ) ) {
          *
          * @return bool Whether the verification email was dispatched.
          */
-        public static function send_verification_email( $user_id ) {
+        public static function send_verification_email( $user_id, $mode = 'auto' ) {
             $user_id = absint( $user_id );
 
             if ( $user_id <= 0 ) {
                 return false;
             }
 
+            $mode = in_array( $mode, array( 'instant', 'queue', 'auto' ), true ) ? $mode : 'auto';
             $dispatched = false;
 
-            if ( class_exists( 'WRE_Email_Queue' ) ) {
+            if ( 'instant' === $mode && class_exists( 'WRE_Email_Sender' ) ) {
+                $dispatched = \WRE_Email_Sender::send_welcome_verify( $user_id, 'instant' );
+            }
+
+            if ( ! $dispatched && 'instant' !== $mode && class_exists( 'WRE_Email_Queue' ) ) {
                 $dispatched = \WRE_Email_Queue::add_to_queue( $user_id, 'welcome-verify' );
             }
 
             if ( ! $dispatched && class_exists( 'WRE_Email_Sender' ) ) {
-                $dispatched = \WRE_Email_Sender::send_welcome_verify( $user_id );
-
-                if ( $dispatched && class_exists( 'WRE_Logger' ) ) {
-                    \WRE_Logger::add(
-                        sprintf( 'Sent verification email immediately for user #%d.', $user_id ),
-                        'sent'
-                    );
-                }
+                $fallback_mode = ( 'instant' === $mode ) ? 'instant' : 'standard';
+                $dispatched    = \WRE_Email_Sender::send_welcome_verify( $user_id, $fallback_mode );
             }
 
             if ( ! $dispatched && class_exists( 'WRE_Logger' ) ) {
@@ -74,6 +73,17 @@ if ( ! class_exists( 'WRE_Verify' ) ) {
             }
 
             return (bool) $dispatched;
+        }
+
+        /**
+         * Convenience wrapper for instant verification dispatches triggered on signup.
+         *
+         * @param int $user_id WordPress user identifier.
+         *
+         * @return bool
+         */
+        public static function send_verification_email_instant( $user_id ) {
+            return self::send_verification_email( $user_id, 'instant' );
         }
 
         /**

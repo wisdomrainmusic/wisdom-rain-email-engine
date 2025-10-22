@@ -295,6 +295,14 @@ if ( ! class_exists( 'WRE_Email_Queue' ) ) {
                 ? wp_strip_all_tags( $context['subject'] )
                 : __( 'Wisdom Rain Notification', 'wisdom-rain-email-engine' );
 
+            if ( class_exists( 'WRE_Consent' ) ) {
+                $unsubscribe = \WRE_Consent::get_unsubscribe_url( $user_id );
+
+                if ( $unsubscribe ) {
+                    $context['unsubscribe_url'] = esc_url_raw( $unsubscribe );
+                }
+            }
+
             $body = \WRE_Templates::render_template( $template, $context );
 
             if ( '' === $body ) {

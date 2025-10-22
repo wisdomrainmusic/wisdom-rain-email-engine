@@ -71,11 +71,12 @@ if ( ! class_exists( 'WRE_Logs' ) ) {
                     <ul class="wre-log-stats__list">
                         <?php
                         $labels = array(
-                            'sent'   => __( 'Total Sent', 'wisdom-rain-email-engine' ),
-                            'failed' => __( 'Total Failed', 'wisdom-rain-email-engine' ),
-                            'queue'  => __( 'Total Queued', 'wisdom-rain-email-engine' ),
-                            'cron'   => __( 'Cron Runs', 'wisdom-rain-email-engine' ),
-                            'total'  => __( 'Total Events', 'wisdom-rain-email-engine' ),
+                            'sent'    => __( 'Total Sent', 'wisdom-rain-email-engine' ),
+                            'instant' => __( 'Instant Sends', 'wisdom-rain-email-engine' ),
+                            'failed'  => __( 'Total Failed', 'wisdom-rain-email-engine' ),
+                            'queue'   => __( 'Total Queued', 'wisdom-rain-email-engine' ),
+                            'cron'    => __( 'Cron Runs', 'wisdom-rain-email-engine' ),
+                            'total'   => __( 'Total Events', 'wisdom-rain-email-engine' ),
                         );
 
                         foreach ( $labels as $key => $label ) :

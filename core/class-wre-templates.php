@@ -413,10 +413,11 @@ if ( ! class_exists( 'WRE_Templates' ) ) {
          */
         protected static function prepare_template_tokens( $slug, $context ) {
             $defaults = array(
-                'site_name'     => get_bloginfo( 'name' ),
-                'site_tagline'  => get_bloginfo( 'description' ),
-                'site_url'      => home_url(),
-                'support_email' => get_option( 'admin_email' ),
+                'site_name'       => get_bloginfo( 'name' ),
+                'site_tagline'    => get_bloginfo( 'description' ),
+                'site_url'        => home_url(),
+                'support_email'   => get_option( 'admin_email' ),
+                'unsubscribe_url' => '',
             );
 
             $context = wp_parse_args( $context, $defaults );
