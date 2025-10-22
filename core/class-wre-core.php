@@ -80,6 +80,16 @@ if ( ! class_exists( 'WRE_Core' ) ) {
                 }
             }
 
+            $cron_file = trailingslashit( WRE_PATH ) . 'core/class-wre-cron.php';
+
+            if ( file_exists( $cron_file ) ) {
+                require_once $cron_file;
+            }
+
+            if ( class_exists( 'WRE_Cron' ) ) {
+                \WRE_Cron::install_schedule();
+            }
+
         }
 
         /**
@@ -109,9 +119,8 @@ if ( ! class_exists( 'WRE_Core' ) ) {
                 'core/class-wre-email-sender.php',
                 'core/class-wre-verify.php',
                 'core/class-wre-templates.php',
-                'includes/class-wre-email.php',
-                'includes/class-wre-queue.php',
-                'includes/class-wre-cron.php',
+                'core/class-wre-cron.php',
+                'includes/class-wre-email-queue.php',
             );
 
             foreach ( $dependencies as $relative_path ) {
@@ -147,8 +156,8 @@ if ( ! class_exists( 'WRE_Core' ) ) {
                 \WRE_Email::init();
             }
 
-            if ( class_exists( 'WRE_Queue' ) ) {
-                \WRE_Queue::init();
+            if ( class_exists( 'WRE_Email_Queue' ) ) {
+                \WRE_Email_Queue::init();
             }
 
             if ( class_exists( 'WRE_Cron' ) ) {

@@ -59,6 +59,18 @@ if ( ! class_exists( 'WRE_Templates' ) ) {
                     'label'       => __( 'Weekly Digest', 'wisdom-rain-email-engine' ),
                     'description' => __( 'Summarises recent activity and upcoming highlights.', 'wisdom-rain-email-engine' ),
                 ),
+                'verify-reminder'       => array(
+                    'label'       => __( 'Verify Reminder', 'wisdom-rain-email-engine' ),
+                    'description' => __( 'Reminds members to confirm their email address.', 'wisdom-rain-email-engine' ),
+                ),
+                'plan-reminder'         => array(
+                    'label'       => __( 'Plan Renewal Reminder', 'wisdom-rain-email-engine' ),
+                    'description' => __( 'Gently prompts members about an upcoming plan renewal.', 'wisdom-rain-email-engine' ),
+                ),
+                'comeback'              => array(
+                    'label'       => __( 'Come Back Message', 'wisdom-rain-email-engine' ),
+                    'description' => __( 'Invites lapsed members to rejoin the community.', 'wisdom-rain-email-engine' ),
+                ),
             );
         }
 
