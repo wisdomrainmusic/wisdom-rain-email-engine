@@ -106,10 +106,10 @@ if ( ! class_exists( 'WRE_Core' ) ) {
                 add_action( 'user_register', array( 'WRE_Verify', 'send_verification_email_instant' ), 10, 1 );
 
                 if ( class_exists( 'WRE_Logger' ) ) {
-                    \WRE_Logger::add( 'Hooked user_register → instant verification bridge active.' );
+                    \WRE_Logger::add( 'Hooked user_register → instant verification bridge active.', 'verify' );
                 }
             } elseif ( class_exists( 'WRE_Logger' ) ) {
-                \WRE_Logger::add( 'Unable to bridge user_register; WRE_Verify::send_verification_email_instant unavailable.', 'failed' );
+                \WRE_Logger::add( 'Unable to bridge user_register; WRE_Verify::send_verification_email_instant unavailable.', 'verify' );
             }
 
             self::initialize_modules();
@@ -141,6 +141,7 @@ if ( ! class_exists( 'WRE_Core' ) ) {
                 'core/class-wre-cron.php',
                 'core/class-wre-passwords.php',
                 'core/class-wre-consent.php',
+                'core/class-wre-orders.php',
             );
 
             foreach ( $dependencies as $relative_path ) {
@@ -206,6 +207,10 @@ if ( ! class_exists( 'WRE_Core' ) ) {
 
             if ( class_exists( 'WRE_Consent' ) ) {
                 \WRE_Consent::init();
+            }
+
+            if ( class_exists( 'WRE_Orders' ) ) {
+                \WRE_Orders::init();
             }
         }
 

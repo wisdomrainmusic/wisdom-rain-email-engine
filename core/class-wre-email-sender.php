@@ -75,7 +75,7 @@ if ( ! class_exists( 'WRE_Email_Sender' ) ) {
                 return false;
             }
 
-            return self::dispatch_email( 'welcome-verify', $user_id, $email, $subject, $body, $delivery_mode );
+            return self::dispatch_email( 'welcome-verify', $user_id, $email, $subject, $body, $delivery_mode, 'verify' );
         }
 
         /**
@@ -257,7 +257,178 @@ if ( ! class_exists( 'WRE_Email_Sender' ) ) {
                 return false;
             }
 
-            return self::dispatch_email( 'verify-reminder', $user_id, $email, $subject, $body );
+            return self::dispatch_email( 'verify-reminder', $user_id, $email, $subject, $body, 'standard', 'verify' );
+        }
+
+        /**
+         * Send an order confirmation email using the payment receipt template.
+         *
+         * @param int|WC_Order $order         WooCommerce order identifier or instance.
+         * @param string       $delivery_mode Delivery mode for logging context.
+         *
+         * @return bool
+         */
+        public static function send_order_confirmation_email( $order, $delivery_mode = 'instant' ) {
+            if ( ! function_exists( 'wc_get_order' ) ) {
+                return false;
+            }
+
+            $order = ( is_object( $order ) && is_a( $order, 'WC_Order' ) ) ? $order : wc_get_order( $order );
+
+            if ( ! $order ) {
+                return false;
+            }
+
+            $email = sanitize_email( $order->get_billing_email() );
+
+            if ( '' === $email ) {
+                return false;
+            }
+
+            $order_number = method_exists( $order, 'get_order_number' ) ? $order->get_order_number() : $order->get_id();
+            $order_date   = method_exists( $order, 'get_date_completed' ) ? $order->get_date_completed() : null;
+
+            if ( ! $order_date && method_exists( $order, 'get_date_created' ) ) {
+                $order_date = $order->get_date_created();
+            }
+
+            if ( $order_date && class_exists( 'WC_DateTime' ) && $order_date instanceof WC_DateTime ) {
+                $order_date = wc_format_datetime( $order_date );
+            } elseif ( $order_date instanceof \DateTimeInterface ) {
+                $order_date = $order_date->format( get_option( 'date_format' ) . ' ' . get_option( 'time_format' ) );
+            } else {
+                $order_date = date_i18n( get_option( 'date_format' ), current_time( 'timestamp' ) );
+            }
+
+            $items = method_exists( $order, 'get_items' ) ? $order->get_items() : array();
+            $item  = ! empty( $items ) ? reset( $items ) : false;
+
+            $product_name = ( $item && method_exists( $item, 'get_name' ) ) ? $item->get_name() : '';
+
+            if ( '' === $product_name ) {
+                $product_name = __( 'your Wisdom Rain order', 'wisdom-rain-email-engine' );
+            }
+
+            $total = method_exists( $order, 'get_total' ) ? $order->get_total() : 0;
+
+            if ( function_exists( 'wc_price' ) ) {
+                $order_total = wc_price( $total, array( 'currency' => $order->get_currency() ) );
+            } else {
+                $order_total = wp_kses_post( number_format_i18n( $total, 2 ) );
+            }
+
+            $support_url = apply_filters( 'wre_support_url', home_url( '/account/' ), $order );
+
+            $placeholders = array(
+                'product_name' => sanitize_text_field( $product_name ),
+                'order_number' => sanitize_text_field( (string) $order_number ),
+                'order_date'   => sanitize_text_field( $order_date ),
+                'order_total'  => $order_total,
+                'support_url'  => esc_url( $support_url ),
+            );
+
+            $placeholders = apply_filters( 'wre_order_confirmation_placeholders', $placeholders, $order );
+
+            $user_id = method_exists( $order, 'get_user_id' ) ? absint( $order->get_user_id() ) : 0;
+            $placeholders = self::add_unsubscribe_context( $placeholders, $user_id );
+
+            $subject = sprintf(
+                /* translators: %s: order number */
+                __( 'Your Wisdom Rain order %s is complete', 'wisdom-rain-email-engine' ),
+                '#' . sanitize_text_field( (string) $order_number )
+            );
+
+            $body = self::render_template( 'payment-receipt', $placeholders );
+
+            if ( '' === $body ) {
+                return false;
+            }
+
+            return self::dispatch_email( 'payment-receipt', $user_id, $email, $subject, $body, $delivery_mode, 'order' );
+        }
+
+        /**
+         * Send the trial expired email to a user.
+         *
+         * @param int   $user_id       WordPress user identifier.
+         * @param array $context       Optional trial context.
+         * @param string $delivery_mode Delivery mode for logging context.
+         *
+         * @return bool
+         */
+        public static function send_trial_expired_email( $user_id, $context = array(), $delivery_mode = 'instant' ) {
+            $user_id = absint( $user_id );
+
+            if ( $user_id <= 0 ) {
+                return false;
+            }
+
+            $user = get_userdata( $user_id );
+
+            if ( ! $user || empty( $user->user_email ) ) {
+                return false;
+            }
+
+            $email = sanitize_email( $user->user_email );
+
+            if ( '' === $email ) {
+                return false;
+            }
+
+            $display_name = $user->display_name ? $user->display_name : $user->user_login;
+
+            $plan_name = '';
+            $renew_url = home_url( '/plans/' );
+            $expired   = '';
+
+            if ( is_array( $context ) ) {
+                if ( isset( $context['plan_name'] ) ) {
+                    $plan_name = sanitize_text_field( $context['plan_name'] );
+                }
+
+                if ( isset( $context['renew_url'] ) ) {
+                    $renew_url = esc_url_raw( $context['renew_url'] );
+                }
+
+                $expired_timestamp = 0;
+
+                if ( isset( $context['expired_at'] ) ) {
+                    $expired_timestamp = absint( $context['expired_at'] );
+                } elseif ( isset( $context['expired_date'] ) ) {
+                    $expired_timestamp = absint( $context['expired_date'] );
+                }
+
+                if ( $expired_timestamp > 0 ) {
+                    $expired = ' ' . sprintf(
+                        /* translators: %s: localized date */
+                        __( 'on %s', 'wisdom-rain-email-engine' ),
+                        date_i18n( get_option( 'date_format' ), $expired_timestamp )
+                    );
+                }
+            }
+
+            if ( '' === $plan_name ) {
+                $plan_name = __( 'Wisdom Rain', 'wisdom-rain-email-engine' );
+            }
+
+            $placeholders = array(
+                'recipient_name' => sanitize_text_field( $display_name ),
+                'plan_name'      => $plan_name,
+                'renew_url'      => esc_url( $renew_url ),
+                'expired_date'   => $expired,
+            );
+
+            $placeholders = apply_filters( 'wre_trial_expired_placeholders', $placeholders, $user_id, $context );
+            $placeholders = self::add_unsubscribe_context( $placeholders, $user_id );
+
+            $subject = __( 'Your Wisdom Rain trial has ended', 'wisdom-rain-email-engine' );
+            $body    = self::render_template( 'trial-expired', $placeholders );
+
+            if ( '' === $body ) {
+                return false;
+            }
+
+            return self::dispatch_email( 'trial-expired', $user_id, $email, $subject, $body, $delivery_mode, 'trial' );
         }
 
         /**
@@ -271,7 +442,7 @@ if ( ! class_exists( 'WRE_Email_Sender' ) ) {
          *
          * @return bool
          */
-        protected static function dispatch_email( $template, $user_id, $email, $subject, $body, $delivery_mode = 'standard' ) {
+        protected static function dispatch_email( $template, $user_id, $email, $subject, $body, $delivery_mode = 'standard', $log_type = '' ) {
             if ( '' === $body ) {
                 return false;
             }
@@ -282,6 +453,7 @@ if ( ! class_exists( 'WRE_Email_Sender' ) ) {
                 $template = sanitize_key( $template );
                 $user_id  = absint( $user_id );
                 $delivery_mode = in_array( $delivery_mode, array( 'standard', 'instant' ), true ) ? $delivery_mode : 'standard';
+                $log_type = sanitize_key( $log_type );
 
                 if ( $result ) {
                     $message = sprintf(
@@ -290,10 +462,10 @@ if ( ! class_exists( 'WRE_Email_Sender' ) ) {
                         $user_id,
                         'instant' === $delivery_mode ? 'instant' : 'standard'
                     );
-                    $type    = ( 'instant' === $delivery_mode ) ? 'instant' : 'sent';
+                    $type    = $log_type ? $log_type : ( ( 'instant' === $delivery_mode ) ? 'instant' : 'sent' );
                 } else {
                     $message = sprintf( 'Email "%s" failed for user #%d.', $template, $user_id );
-                    $type    = 'failed';
+                    $type    = $log_type ? $log_type : 'failed';
                 }
 
                 \WRE_Logger::add( $message, $type );
