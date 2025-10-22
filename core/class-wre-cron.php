@@ -121,6 +121,16 @@ if ( ! class_exists( 'WRE_Cron' ) ) {
                 // Process queued emails after reminders are added.
                 \WRE_Email_Queue::process_queue();
             }
+
+            if ( class_exists( 'WRE_Logger' ) ) {
+                $summary = sprintf(
+                    /* translators: %d: number of email jobs queued during the cron run */
+                    __( 'Cron tasks executed; %d jobs queued.', 'wisdom-rain-email-engine' ),
+                    absint( self::$queued_during_run )
+                );
+
+                \WRE_Logger::add( $summary, 'cron' );
+            }
         }
 
         /**

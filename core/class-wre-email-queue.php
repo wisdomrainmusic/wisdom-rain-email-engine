@@ -65,7 +65,7 @@ if ( ! class_exists( 'WRE_Email_Queue' ) ) {
             $template = sanitize_key( $template );
 
             if ( $user_id <= 0 || '' === $template ) {
-                self::log( 'Unable to queue email job: invalid user or template.' );
+                self::log( 'Unable to queue email job: invalid user or template.', 'failed' );
 
                 return false;
             }
@@ -83,7 +83,14 @@ if ( ! class_exists( 'WRE_Email_Queue' ) ) {
 
             self::save_queue( $queue );
 
-            self::log( sprintf( 'Queued %s email for user #%d.', $template, $user_id ) );
+            if ( class_exists( 'WRE_Logger' ) ) {
+                \WRE_Logger::add(
+                    sprintf( 'Queued "%s" email for user #%d.', $template, $user_id ),
+                    'queue'
+                );
+            } else {
+                self::log( sprintf( 'Queued %s email for user #%d.', $template, $user_id ) );
+            }
 
             self::schedule_next_run();
 
@@ -135,7 +142,8 @@ if ( ! class_exists( 'WRE_Email_Queue' ) ) {
                             $attempts,
                             isset( $job['user_id'] ) ? absint( $job['user_id'] ) : 0,
                             isset( $job['template'] ) ? $job['template'] : 'unknown'
-                        )
+                        ),
+                        'failed'
                     );
                 } else {
                     self::log(
@@ -144,7 +152,8 @@ if ( ! class_exists( 'WRE_Email_Queue' ) ) {
                             $attempts,
                             isset( $job['user_id'] ) ? absint( $job['user_id'] ) : 0,
                             isset( $job['template'] ) ? $job['template'] : 'unknown'
-                        )
+                        ),
+                        'failed'
                     );
                 }
             }
@@ -461,7 +470,21 @@ if ( ! class_exists( 'WRE_Email_Queue' ) ) {
          *
          * @param string $message Message to log.
          */
-        protected static function log( $message ) {
+        protected static function log( $message, $type = 'queue' ) {
+            $message = is_scalar( $message ) ? (string) $message : '';
+
+            if ( '' === $message ) {
+                return;
+            }
+
+            $type = is_string( $type ) ? $type : 'queue';
+
+            if ( class_exists( 'WRE_Logger' ) ) {
+                \WRE_Logger::add( $message, $type );
+
+                return;
+            }
+
             error_log( 'WRE Queue → ' . $message );
         }
     }
