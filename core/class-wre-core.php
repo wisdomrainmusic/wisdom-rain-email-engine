@@ -79,6 +79,7 @@ if ( ! class_exists( 'WRE_Core' ) ) {
                     wp_mkdir_p( $directory );
                 }
             }
+
         }
 
         /**
@@ -106,6 +107,7 @@ if ( ! class_exists( 'WRE_Core' ) ) {
                 'admin/class-wre-admin.php',
                 'core/class-wrpa-codex-command.php',
                 'core/class-wre-email-sender.php',
+                'core/class-wre-verify.php',
                 'includes/class-wre-email.php',
                 'includes/class-wre-queue.php',
                 'includes/class-wre-cron.php',
@@ -150,6 +152,10 @@ if ( ! class_exists( 'WRE_Core' ) ) {
 
             if ( class_exists( 'WRE_Email_Sender' ) ) {
                 \WRE_Email_Sender::init();
+            }
+
+            if ( class_exists( 'WRE_Verify' ) ) {
+                \WRE_Verify::init();
             }
         }
 

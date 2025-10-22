@@ -17,7 +17,7 @@ if ( ! class_exists( 'WRE_Email_Sender' ) ) {
         /**
          * Option key used to persist verification tokens for users.
          */
-        const META_VERIFY_TOKEN = '_wre_email_verify_token';
+        const META_VERIFY_TOKEN = '_wre_verify_token';
 
         /**
          * Register action hooks required for the email sender.
@@ -93,10 +93,14 @@ if ( ! class_exists( 'WRE_Email_Sender' ) ) {
             $raw_token = implode( '|', array( $user_id, time(), wp_generate_password( 20, false ) ) );
             $token     = wp_hash( $raw_token );
 
-            update_user_meta( $user_id, self::META_VERIFY_TOKEN, array(
-                'token'     => $token,
-                'generated' => current_time( 'timestamp', true ),
-            ) );
+            update_user_meta(
+                $user_id,
+                self::META_VERIFY_TOKEN,
+                array(
+                    'token'     => $token,
+                    'generated' => current_time( 'timestamp', true ),
+                )
+            );
 
             return $token;
         }
@@ -110,15 +114,32 @@ if ( ! class_exists( 'WRE_Email_Sender' ) ) {
          * @return string
          */
         protected static function build_verification_link( $user_id, $token ) {
-            $verify_endpoint = home_url( '/verify' );
+            $verify_endpoint = self::get_verify_endpoint_url();
 
-            return add_query_arg(
-                array(
-                    'user'  => $user_id,
-                    'token' => rawurlencode( $token ),
-                ),
-                $verify_endpoint
+            $args = array(
+                'user'  => $user_id,
+                'token' => rawurlencode( $token ),
             );
+
+            $args = apply_filters( 'wre_verify_query_args', $args, $user_id );
+
+            return add_query_arg( $args, $verify_endpoint );
+        }
+
+        /**
+         * Retrieve the verification endpoint URL, allowing overrides via filter.
+         *
+         * @return string
+         */
+        protected static function get_verify_endpoint_url() {
+            $default = home_url( '/verify' );
+            $endpoint = apply_filters( 'wre_verify_endpoint', $default );
+
+            if ( ! is_string( $endpoint ) || '' === trim( $endpoint ) ) {
+                return $default;
+            }
+
+            return $endpoint;
         }
 
         /**
