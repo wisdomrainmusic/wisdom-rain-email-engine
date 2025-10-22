@@ -102,14 +102,14 @@ if ( ! class_exists( 'WRE_Core' ) ) {
              * 🔗 Bridge WRPA signup → WRE Verify
              * When a new user registers, send them the combined Welcome + Verify email.
              */
-            if ( class_exists( 'WRE_Verify' ) && method_exists( 'WRE_Verify', 'send_verification_email' ) ) {
-                add_action( 'user_register', array( 'WRE_Verify', 'send_verification_email' ), 10, 1 );
+            if ( class_exists( 'WRE_Verify' ) && method_exists( 'WRE_Verify', 'send_verification_email_instant' ) ) {
+                add_action( 'user_register', array( 'WRE_Verify', 'send_verification_email_instant' ), 10, 1 );
 
                 if ( class_exists( 'WRE_Logger' ) ) {
-                    \WRE_Logger::add( 'Hooked user_register → send_verification_email bridge active.' );
+                    \WRE_Logger::add( 'Hooked user_register → instant verification bridge active.' );
                 }
             } elseif ( class_exists( 'WRE_Logger' ) ) {
-                \WRE_Logger::add( 'Unable to bridge user_register; WRE_Verify::send_verification_email unavailable.', 'failed' );
+                \WRE_Logger::add( 'Unable to bridge user_register; WRE_Verify::send_verification_email_instant unavailable.', 'failed' );
             }
 
             self::initialize_modules();
@@ -139,6 +139,8 @@ if ( ! class_exists( 'WRE_Core' ) ) {
                 'core/class-wre-templates.php',
                 'core/class-wre-email-queue.php',
                 'core/class-wre-cron.php',
+                'core/class-wre-passwords.php',
+                'core/class-wre-consent.php',
             );
 
             foreach ( $dependencies as $relative_path ) {
@@ -196,6 +198,14 @@ if ( ! class_exists( 'WRE_Core' ) ) {
 
             if ( class_exists( 'WRE_Verify' ) ) {
                 \WRE_Verify::init();
+            }
+
+            if ( class_exists( 'WRE_Passwords' ) ) {
+                \WRE_Passwords::init();
+            }
+
+            if ( class_exists( 'WRE_Consent' ) ) {
+                \WRE_Consent::init();
             }
         }
 

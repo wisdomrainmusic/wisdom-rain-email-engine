@@ -36,7 +36,7 @@ if ( ! class_exists( 'WRE_Email_Sender' ) ) {
          *
          * @return bool True if the email is dispatched, false otherwise.
          */
-        public static function send_welcome_verify( $user_id ) {
+        public static function send_welcome_verify( $user_id, $delivery_mode = 'standard' ) {
             $user_id = absint( $user_id );
 
             if ( $user_id <= 0 ) {
@@ -67,13 +67,15 @@ if ( ! class_exists( 'WRE_Email_Sender' ) ) {
                 'verification_url' => esc_url( $verify_url ),
             );
 
+            $placeholders = self::add_unsubscribe_context( $placeholders, $user_id );
+
             $body = self::render_template( 'welcome-verify', $placeholders );
 
             if ( empty( $body ) ) {
                 return false;
             }
 
-            return self::dispatch_email( 'welcome-verify', $user_id, $email, $subject, $body );
+            return self::dispatch_email( 'welcome-verify', $user_id, $email, $subject, $body, $delivery_mode );
         }
 
         /**
@@ -132,6 +134,7 @@ if ( ! class_exists( 'WRE_Email_Sender' ) ) {
             );
 
             $placeholders = apply_filters( 'wre_plan_reminder_placeholders', $placeholders, $user_id, $days_remaining );
+            $placeholders = self::add_unsubscribe_context( $placeholders, $user_id );
 
             $body = self::render_template( 'plan-reminder', $placeholders );
 
@@ -180,6 +183,7 @@ if ( ! class_exists( 'WRE_Email_Sender' ) ) {
             );
 
             $placeholders = apply_filters( 'wre_comeback_placeholders', $placeholders, $user_id, $days_since_expiry );
+            $placeholders = self::add_unsubscribe_context( $placeholders, $user_id );
 
             $body = self::render_template( 'comeback', $placeholders );
 
@@ -241,6 +245,8 @@ if ( ! class_exists( 'WRE_Email_Sender' ) ) {
                 'verification_url' => esc_url( $verify_url ),
             );
 
+            $placeholders = self::add_unsubscribe_context( $placeholders, $user_id );
+
             $body = self::render_template( 'verify-reminder', $placeholders );
 
             if ( '' === $body ) {
@@ -265,7 +271,7 @@ if ( ! class_exists( 'WRE_Email_Sender' ) ) {
          *
          * @return bool
          */
-        protected static function dispatch_email( $template, $user_id, $email, $subject, $body ) {
+        protected static function dispatch_email( $template, $user_id, $email, $subject, $body, $delivery_mode = 'standard' ) {
             if ( '' === $body ) {
                 return false;
             }
@@ -275,10 +281,16 @@ if ( ! class_exists( 'WRE_Email_Sender' ) ) {
             if ( class_exists( 'WRE_Logger' ) ) {
                 $template = sanitize_key( $template );
                 $user_id  = absint( $user_id );
+                $delivery_mode = in_array( $delivery_mode, array( 'standard', 'instant' ), true ) ? $delivery_mode : 'standard';
 
                 if ( $result ) {
-                    $message = sprintf( 'Email "%s" sent for user #%d.', $template, $user_id );
-                    $type    = 'sent';
+                    $message = sprintf(
+                        'Email "%s" sent for user #%d (%s dispatch).',
+                        $template,
+                        $user_id,
+                        'instant' === $delivery_mode ? 'instant' : 'standard'
+                    );
+                    $type    = ( 'instant' === $delivery_mode ) ? 'instant' : 'sent';
                 } else {
                     $message = sprintf( 'Email "%s" failed for user #%d.', $template, $user_id );
                     $type    = 'failed';
@@ -288,6 +300,30 @@ if ( ! class_exists( 'WRE_Email_Sender' ) ) {
             }
 
             return (bool) $result;
+        }
+
+        /**
+         * Append unsubscribe placeholder data when consent tools are available.
+         *
+         * @param array $context  Placeholder values to send to the template engine.
+         * @param int   $user_id  WordPress user identifier.
+         *
+         * @return array
+         */
+        protected static function add_unsubscribe_context( $context, $user_id ) {
+            if ( ! is_array( $context ) ) {
+                $context = array();
+            }
+
+            if ( class_exists( 'WRE_Consent' ) ) {
+                $url = \WRE_Consent::get_unsubscribe_url( $user_id );
+
+                if ( $url ) {
+                    $context['unsubscribe_url'] = esc_url_raw( $url );
+                }
+            }
+
+            return $context;
         }
 
         /**

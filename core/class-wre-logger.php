@@ -66,11 +66,12 @@ if ( ! class_exists( 'WRE_Logger' ) ) {
          */
         public static function get_stats( $logs = null ) {
             $totals = array(
-                'sent'   => 0,
-                'failed' => 0,
-                'queue'  => 0,
-                'cron'   => 0,
-                'total'  => 0,
+                'sent'    => 0,
+                'failed'  => 0,
+                'queue'   => 0,
+                'cron'    => 0,
+                'instant' => 0,
+                'total'   => 0,
             );
 
             if ( null === $logs ) {
@@ -100,6 +101,9 @@ if ( ! class_exists( 'WRE_Logger' ) ) {
                         break;
                     case 'CRON':
                         $totals['cron']++;
+                        break;
+                    case 'INSTANT':
+                        $totals['instant']++;
                         break;
                     default:
                         break;
