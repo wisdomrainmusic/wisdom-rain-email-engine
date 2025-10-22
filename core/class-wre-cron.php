@@ -117,6 +117,14 @@ if ( ! class_exists( 'WRE_Cron' ) ) {
                 self::queue_comeback_emails();
             }
 
+            if ( self::can_queue_more() ) {
+                self::dispatch_trial_expiration_queue();
+            }
+
+            if ( self::can_queue_more() ) {
+                self::dispatch_subscription_expiration_queue();
+            }
+
             if ( class_exists( 'WRE_Email_Queue' ) ) {
                 // Process queued emails after reminders are added.
                 \WRE_Email_Queue::process_queue();
@@ -282,6 +290,48 @@ if ( ! class_exists( 'WRE_Cron' ) ) {
                 if ( self::queue_email( 'comeback', $user_id, array( 'days_since_expiry' => self::COMEBACK_DELAY_DAYS ) ) ) {
                     update_user_meta( $user_id, self::META_COMEBACK_SENT, $now );
                 }
+            }
+        }
+
+        /**
+         * Deliver queued trial expiration notices that were deferred to cron.
+         */
+        protected static function dispatch_trial_expiration_queue() {
+            if ( ! class_exists( 'WRE_Trials' ) || ! method_exists( 'WRE_Trials', 'process_queued_expirations' ) ) {
+                return;
+            }
+
+            $remaining = self::MAX_QUEUE_PER_RUN - self::$queued_during_run;
+
+            if ( $remaining <= 0 ) {
+                return;
+            }
+
+            $processed = \WRE_Trials::process_queued_expirations( 'trial', $remaining );
+
+            if ( $processed > 0 ) {
+                self::$queued_during_run += absint( $processed );
+            }
+        }
+
+        /**
+         * Deliver queued subscription expiration notices via cron.
+         */
+        protected static function dispatch_subscription_expiration_queue() {
+            if ( ! class_exists( 'WRE_Trials' ) || ! method_exists( 'WRE_Trials', 'process_queued_expirations' ) ) {
+                return;
+            }
+
+            $remaining = self::MAX_QUEUE_PER_RUN - self::$queued_during_run;
+
+            if ( $remaining <= 0 ) {
+                return;
+            }
+
+            $processed = \WRE_Trials::process_queued_expirations( 'subscription', $remaining );
+
+            if ( $processed > 0 ) {
+                self::$queued_during_run += absint( $processed );
             }
         }
 
