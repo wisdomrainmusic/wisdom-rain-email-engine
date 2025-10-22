@@ -12,12 +12,12 @@
 | Templates | Pass | Varsayılan şablonlar eklenti içinde mevcut; `ensure_storage_directory()` uploads altında override klasörü oluşturuyor ve yönetişim arayüzü sağlanıyor.【F:core/class-wre-templates.php†L96-L243】【F:templates/emails/email-welcome-verify.html†L1-L200】 |
 | Verify Flow | Pass | `/verify` talepleri için token doğrulaması, geçerli token için yönlendirme ve hatalı taleplerde 403 yanıtı uygulanmış durumda.【F:core/class-wre-verify.php†L30-L181】 |
 | Logs | Warning | `_wre_log_entries` maksimum 500 kayıt tutacak şekilde yönetiliyor ancak son 20 kaydın içeriği test ortamı olmadan alınamadı.【F:core/class-wre-logger.php†L17-L135】 |
-| WRPA Entegrasyonu | Warning | WRPA_Admin başlangıçta aktive ediliyor ancak cron akışı `WRPA_Access` metodlarına dayanıyor; sınıf bulunmazsa sessizce atlıyor. WRPA_Access’in init zinciri bu depoda görünmediğinden çalışma zamanı riski sürüyor.【F:core/class-wre-core.php†L142-L184】【F:core/class-wre-cron.php†L219-L284】 |
+| WRPA Entegrasyonu | Warning | WRE_Admin_Notices başlangıçta aktive ediliyor ancak cron akışı `WRPA_Access` metodlarına dayanıyor; sınıf bulunmazsa sessizce atlıyor. WRPA_Access’in init zinciri bu depoda görünmediğinden çalışma zamanı riski sürüyor.【F:core/class-wre-core.php†L142-L184】【F:core/class-wre-cron.php†L219-L284】 |
 
 ## Ayrıntılı Bulgular
 ### Bootstrap & Hooks
 - `WRE_Core::boot()` `plugins_loaded` sırasında `init()` tetikleyerek çekirdek modülleri yüklüyor; aktivasyon kancası şablon dizinlerini ve cron zamanlamasını hazırlıyor.【F:core/class-wre-core.php†L29-L105】
-- `initialize_modules()` içinde `WRE_Cron::init()`, `WRE_Templates::init()`, `WRE_Verify::init()` ve WRPA_Admin dahil tüm mevcut modüller koşullu olarak çağrılıyor; tanımlı olmayan sınıflar atlanıyor, bu yüzden eksik modül hatasına rastlanmadı.【F:core/class-wre-core.php†L142-L184】
+- `initialize_modules()` içinde `WRE_Cron::init()`, `WRE_Templates::init()`, `WRE_Verify::init()` ve WRE_Admin_Notices dahil tüm mevcut modüller koşullu olarak çağrılıyor; tanımlı olmayan sınıflar atlanıyor, bu yüzden eksik modül hatasına rastlanmadı.【F:core/class-wre-core.php†L142-L184】
 
 ### Admin Menü & Sayfalar
 - Yönetim menüsü `WRE_Admin::register_menu()` aracılığıyla eklentiye özel sekmeli arayüz sağlıyor; ayrı şablon ve kampanya alt sayfaları var.【F:admin/class-wre-admin.php†L22-L163】
@@ -50,7 +50,7 @@
 - Son 20 kaydı almak için WordPress ortamında `WRE_Logger::get()` kullanılmalı; bu çalışma alanında veri bulunmuyor.
 
 ### WRPA Entegrasyonu
-- `WRPA_Admin::init()` çekirdek tarafından çağrılıyor ve CLI bildirimi yönetiyor.【F:core/class-wre-core.php†L142-L184】【F:admin/class-wrpa-admin.php†L18-L35】
+- `WRE_Admin_Notices::init()` çekirdek tarafından çağrılıyor ve CLI bildirimi yönetiyor.【F:core/class-wre-core.php†L142-L184】【F:admin/class-wre-admin-notices.php†L18-L35】
 - Cron süreçleri `WRPA_Access` sınıfına büyük oranda bağlı; sınıf tanımlı değilse plan/comeback e-postaları kuyruğa alınmıyor. Üretimde WRPA eklentisinin yüklü ve `get_users_expiring_in_days` / `get_users_expired_for_days` metodlarını sunuyor olması şart.【F:core/class-wre-cron.php†L219-L284】
 
 ## Ham Çıktılar

@@ -113,12 +113,12 @@ if ( ! class_exists( 'WRE_Core' ) ) {
             }
 
             $dependencies = array(
-                'admin/class-wrpa-admin.php',
+                'admin/class-wre-admin-notices.php',
                 'admin/class-wre-admin.php',
                 'admin/class-wre-campaigns.php',
                 'admin/class-wre-logs.php',
                 'core/class-wre-logger.php',
-                'core/class-wrpa-codex-command.php',
+                'core/class-wre-codex-command.php',
                 'core/class-wre-email-sender.php',
                 'core/class-wre-verify.php',
                 'core/class-wre-templates.php',
@@ -139,8 +139,8 @@ if ( ! class_exists( 'WRE_Core' ) ) {
          * Call initialization routines for loaded modules when available.
          */
         protected static function initialize_modules() {
-            if ( class_exists( 'WRPA_Admin' ) ) {
-                \WRPA_Admin::init();
+            if ( class_exists( 'WRE_Admin_Notices' ) ) {
+                \WRE_Admin_Notices::init();
             }
 
             if ( class_exists( 'WRE_Admin' ) ) {
@@ -159,8 +159,8 @@ if ( ! class_exists( 'WRE_Core' ) ) {
                 \WRE_Templates::init();
             }
 
-            if ( class_exists( 'WRPA_Codex_Command' ) && defined( 'WP_CLI' ) && WP_CLI ) {
-                \WRPA_Codex_Command::register();
+            if ( class_exists( 'WRE_Codex_Command' ) && defined( 'WP_CLI' ) && WP_CLI ) {
+                \WRE_Codex_Command::register();
             }
 
             if ( class_exists( 'WRE_Email' ) ) {
