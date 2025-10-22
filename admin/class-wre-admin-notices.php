@@ -1,16 +1,16 @@
 <?php
 /**
- * Admin-specific functionality for the Wisdom Rain Email Engine plugin.
+ * Admin notice integration for the Wisdom Rain Email Engine plugin.
  *
  * @package WisdomRain\EmailEngine
  */
 
-if ( ! class_exists( 'WRPA_Admin' ) ) {
+if ( ! class_exists( 'WRE_Admin_Notices' ) ) {
     /**
-     * Handles administrative hooks such as notices.
+     * Handles administrative hooks such as notices raised by CLI commands.
      */
-    class WRPA_Admin {
-        const NOTICE_OPTION = 'wrpa_codex_notice';
+    class WRE_Admin_Notices {
+        const NOTICE_OPTION = 'wre_codex_notice';
 
         /**
          * Register admin hooks.

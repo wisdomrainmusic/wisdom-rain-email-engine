@@ -5,11 +5,11 @@
  * @package WisdomRain\EmailEngine
  */
 
-if ( ! class_exists( 'WRPA_Codex_Command' ) ) {
+if ( ! class_exists( 'WRE_Codex_Command' ) ) {
     /**
      * Registers Codex test commands with WP-CLI.
      */
-    class WRPA_Codex_Command {
+    class WRE_Codex_Command {
         /**
          * Register the command with WP-CLI.
          */
@@ -25,7 +25,7 @@ if ( ! class_exists( 'WRPA_Codex_Command' ) ) {
          * Handle the "codex test" command.
          */
         public static function handle_test_command() {
-            update_option( \WRPA_Admin::NOTICE_OPTION, __( 'Hello Email Engine', 'wisdom-rain-email-engine' ) );
+            update_option( \WRE_Admin_Notices::NOTICE_OPTION, __( 'Hello Email Engine', 'wisdom-rain-email-engine' ) );
 
             \WP_CLI::success( 'Hello Email Engine notice scheduled for display.' );
         }
