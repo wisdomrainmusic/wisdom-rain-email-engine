@@ -20,6 +20,9 @@ if ( ! class_exists( 'WRE_Orders' ) ) {
          * Wire WordPress hooks for order notifications.
          */
         public static function init() {
+            // Instant trigger after successful payment (fires on checkout thank-you page).
+            add_action( 'woocommerce_thankyou', array( __CLASS__, 'send_order_confirmation_email' ), 10, 1 );
+
             add_action( 'woocommerce_order_status_completed', array( __CLASS__, 'send_order_confirmation_email' ), 20, 1 );
 
             add_filter( 'woocommerce_email_enabled_customer_completed_order', array( __CLASS__, 'disable_default_wc_email' ), 20, 2 );
