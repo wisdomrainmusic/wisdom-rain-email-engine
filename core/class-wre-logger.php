@@ -38,7 +38,7 @@ if ( ! class_exists( 'WRE_Logger' ) ) {
          * @param string $message Message to persist.
          * @param string $type    Log type for filtering.
          */
-        public static function add( $message, $type = 'info' ) {
+        public static function add( $message, $type = 'info', $context = array() ) {
             $logs = get_option( self::OPTION_KEY, array() );
 
             if ( ! is_array( $logs ) ) {
@@ -49,6 +49,7 @@ if ( ! class_exists( 'WRE_Logger' ) ) {
                 'time' => current_time( 'mysql' ),
                 'type' => strtoupper( sanitize_key( $type ) ),
                 'msg'  => self::sanitize_message( $message ),
+                'context' => self::sanitize_context( $context ),
             );
 
             if ( count( $logs ) > self::MAX_LOGS ) {
@@ -190,6 +191,44 @@ if ( ! class_exists( 'WRE_Logger' ) ) {
             }
 
             return '';
+        }
+
+        /**
+         * Sanitize structured context payloads prior to storage.
+         *
+         * @param mixed $context Context data to sanitise.
+         *
+         * @return array<string, mixed>
+         */
+        protected static function sanitize_context( $context ) {
+            if ( empty( $context ) || ! is_array( $context ) ) {
+                return array();
+            }
+
+            $sanitized = array();
+
+            foreach ( $context as $key => $value ) {
+                $key = sanitize_key( $key );
+
+                if ( '' === $key ) {
+                    continue;
+                }
+
+                if ( is_array( $value ) ) {
+                    $sanitized[ $key ] = self::sanitize_context( $value );
+                    continue;
+                }
+
+                if ( is_bool( $value ) ) {
+                    $sanitized[ $key ] = (bool) $value;
+                } elseif ( is_numeric( $value ) ) {
+                    $sanitized[ $key ] = 0 + $value;
+                } elseif ( is_scalar( $value ) ) {
+                    $sanitized[ $key ] = wp_kses_post( (string) $value );
+                }
+            }
+
+            return $sanitized;
         }
     }
 }

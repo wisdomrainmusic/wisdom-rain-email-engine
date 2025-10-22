@@ -207,6 +207,7 @@ if ( ! class_exists( 'WRE_Campaigns' ) ) {
                 'all'     => __( 'All Members', 'wisdom-rain-email-engine' ),
                 'active'  => __( 'Active Premium', 'wisdom-rain-email-engine' ),
                 'expired' => __( 'Expired Members', 'wisdom-rain-email-engine' ),
+                'trial'   => __( 'Trial Members', 'wisdom-rain-email-engine' ),
             );
         }
 
@@ -293,8 +294,33 @@ if ( ! class_exists( 'WRE_Campaigns' ) ) {
                             return WRPA_Access::get_expired_members();
                         }
                         break;
+                    case 'trial':
+                        if ( method_exists( 'WRPA_Access', 'get_trial_members' ) ) {
+                            return WRPA_Access::get_trial_members();
+                        }
+                        break;
                     default:
                         break;
+                }
+            }
+
+            if ( 'trial' === $type ) {
+                $trial_users = self::get_trial_members_from_meta();
+
+                if ( ! empty( $trial_users ) ) {
+                    return $trial_users;
+                }
+
+                if ( class_exists( 'WRE_Trials' ) && method_exists( 'WRE_Trials', 'get_last_expiration' ) ) {
+                    $last_expiration = \WRE_Trials::get_last_expiration();
+
+                    if ( ! empty( $last_expiration ) && ! empty( $last_expiration['user_id'] ) ) {
+                        $user = get_userdata( absint( $last_expiration['user_id'] ) );
+
+                        if ( $user instanceof WP_User ) {
+                            return array( $user );
+                        }
+                    }
                 }
             }
 
@@ -343,6 +369,73 @@ if ( ! class_exists( 'WRE_Campaigns' ) ) {
             }
 
             return $normalized;
+        }
+
+        /**
+         * Retrieve trial members via stored subscription status metadata.
+         *
+         * @return array<int, WP_User>
+         */
+        protected static function get_trial_members_from_meta() {
+            if ( ! class_exists( 'WP_User_Query' ) ) {
+                return array();
+            }
+
+            $status   = class_exists( 'WRE_Cron' ) ? \WRE_Cron::SUBSCRIPTION_STATUS_TRIAL : 'trial';
+            $meta_key = class_exists( 'WRE_Cron' ) ? \WRE_Cron::META_SUBSCRIPTION_STATUS : '_wre_subscription_status';
+
+            $candidate_keys = array_unique(
+                apply_filters(
+                    'wre_campaign_trial_meta_keys',
+                    array(
+                        $meta_key,
+                        '_wre_subscription_status',
+                        'wrpa_subscription_status',
+                    )
+                )
+            );
+
+            $meta_query = array( 'relation' => 'OR' );
+
+            foreach ( $candidate_keys as $candidate ) {
+                $candidate = sanitize_key( $candidate );
+
+                if ( '' === $candidate ) {
+                    continue;
+                }
+
+                $meta_query[] = array(
+                    'key'   => $candidate,
+                    'value' => $status,
+                );
+            }
+
+            if ( count( $meta_query ) <= 1 ) {
+                return array();
+            }
+
+            $args = apply_filters(
+                'wre_campaign_trial_query_args',
+                array(
+                    'fields'     => 'all',
+                    'number'     => 200,
+                    'role__in'   => array( 'subscriber', 'customer' ),
+                    'meta_query' => $meta_query,
+                )
+            );
+
+            $query = new WP_User_Query( $args );
+
+            if ( ! $query instanceof WP_User_Query ) {
+                return array();
+            }
+
+            return array_filter(
+                $query->get_results(),
+                static function ( $user ) {
+                    return $user instanceof WP_User;
+                }
+            );
         }
 
         /**
