@@ -1,6 +1,6 @@
 <?php
 /**
- * WooCommerce order and trial event integration for WRE.
+ * WooCommerce order event integration for WRE.
  *
  * @package WisdomRain\EmailEngine
  */
@@ -11,19 +11,16 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 if ( ! class_exists( 'WRE_Orders' ) ) {
     /**
-     * Bridges WooCommerce order events and WRPA trial expirations to WRE emails.
+     * Bridges WooCommerce order events to WRE emails.
      */
     class WRE_Orders {
-        const OPTION_LAST_ORDER_ID   = '_wre_last_order_id';
-        const OPTION_TRIAL_QUEUE     = '_wre_trial_queue';
-        const MAX_TRIAL_ATTEMPTS     = 3;
+        const OPTION_LAST_ORDER_ID = '_wre_last_order_id';
 
         /**
-         * Wire WordPress hooks for order and trial notifications.
+         * Wire WordPress hooks for order notifications.
          */
         public static function init() {
-            add_action( 'woocommerce_order_status_completed', array( __CLASS__, 'handle_order_completed' ), 20, 1 );
-            add_action( 'wrpa_trial_expired', array( __CLASS__, 'handle_trial_expired' ), 10, 2 );
+            add_action( 'woocommerce_order_status_completed', array( __CLASS__, 'send_order_confirmation_email' ), 20, 1 );
 
             add_filter( 'woocommerce_email_enabled_customer_completed_order', array( __CLASS__, 'disable_default_wc_email' ), 20, 2 );
             add_filter( 'woocommerce_email_enabled_customer_processing_order', array( __CLASS__, 'disable_default_wc_email' ), 20, 2 );
@@ -42,31 +39,6 @@ if ( ! class_exists( 'WRE_Orders' ) ) {
         }
 
         /**
-         * Triggered when an order transitions to the completed status.
-         *
-         * @param int $order_id WooCommerce order identifier.
-         */
-        public static function handle_order_completed( $order_id ) {
-            $order_id = absint( $order_id );
-
-            if ( $order_id <= 0 ) {
-                return;
-            }
-
-            self::record_last_order_id( $order_id );
-
-            $sent = self::send_order_confirmation_email( $order_id, 'instant' );
-
-            if ( class_exists( 'WRE_Logger' ) ) {
-                $message = $sent
-                    ? sprintf( 'Order #%d marked completed; confirmation dispatched.', $order_id )
-                    : sprintf( 'Order #%d marked completed; confirmation dispatch failed.', $order_id );
-
-                \WRE_Logger::add( $message, 'order' );
-            }
-        }
-
-        /**
          * Dispatch an order confirmation email for the supplied order.
          *
          * @param int|WC_Order $order        WooCommerce order identifier or instance.
@@ -75,93 +47,37 @@ if ( ! class_exists( 'WRE_Orders' ) ) {
          * @return bool
          */
         public static function send_order_confirmation_email( $order, $delivery_mode = 'instant' ) {
+            if ( ! function_exists( 'wc_get_order' ) ) {
+                return false;
+            }
+
+            $order_object = ( is_object( $order ) && is_a( $order, 'WC_Order' ) ) ? $order : wc_get_order( $order );
+
+            if ( ! $order_object ) {
+                return false;
+            }
+
+            $order_id = method_exists( $order_object, 'get_id' ) ? absint( $order_object->get_id() ) : 0;
+
+            if ( $order_id > 0 ) {
+                self::record_last_order_id( $order_id );
+            }
+
             if ( ! class_exists( 'WRE_Email_Sender' ) ) {
                 return false;
             }
 
-            return \WRE_Email_Sender::send_order_confirmation_email( $order, $delivery_mode );
-        }
+            $sent = \WRE_Email_Sender::send_order_confirmation_email( $order_object, $delivery_mode );
 
-        /**
-         * Handle WRPA trial expiration events.
-         *
-         * @param int   $user_id WordPress user identifier.
-         * @param array $context Additional context provided by WRPA.
-         */
-        public static function handle_trial_expired( $user_id, $context = array() ) {
-            $user_id = absint( $user_id );
+            if ( class_exists( 'WRE_Logger' ) && $order_id > 0 ) {
+                $message = $sent
+                    ? sprintf( 'Confirmation email sent for order #%d.', $order_id )
+                    : sprintf( 'Confirmation email failed for order #%d.', $order_id );
 
-            if ( $user_id <= 0 ) {
-                return;
+                \WRE_Logger::add( $message, 'order' );
             }
 
-            self::queue_trial_job( $user_id, $context );
-            self::process_pending_trial_jobs( true );
-        }
-
-        /**
-         * Determine whether there are trial jobs queued for dispatch.
-         *
-         * @return bool
-         */
-        public static function has_pending_trial_jobs() {
-            $queue = self::get_trial_queue();
-
-            return ! empty( $queue );
-        }
-
-        /**
-         * Process queued trial-expiration jobs.
-         *
-         * @param bool $force_instant Whether to dispatch emails instantly.
-         *
-         * @return int Number of jobs dispatched successfully.
-         */
-        public static function process_pending_trial_jobs( $force_instant = false ) {
-            $queue = self::get_trial_queue();
-
-            if ( empty( $queue ) ) {
-                return 0;
-            }
-
-            $remaining = array();
-            $processed = 0;
-
-            foreach ( $queue as $job ) {
-                $user_id  = isset( $job['user_id'] ) ? absint( $job['user_id'] ) : 0;
-                $context  = isset( $job['context'] ) && is_array( $job['context'] ) ? $job['context'] : array();
-                $attempts = isset( $job['attempts'] ) ? absint( $job['attempts'] ) : 0;
-
-                if ( $user_id <= 0 ) {
-                    continue;
-                }
-
-                $delivery_mode = $force_instant ? 'instant' : 'standard';
-                $sent          = class_exists( 'WRE_Email_Sender' )
-                    ? \WRE_Email_Sender::send_trial_expired_email( $user_id, $context, $delivery_mode )
-                    : false;
-
-                if ( $sent ) {
-                    $processed++;
-                    continue;
-                }
-
-                $attempts++;
-
-                if ( $attempts < self::MAX_TRIAL_ATTEMPTS ) {
-                    $job['attempts'] = $attempts;
-                    $remaining[]      = $job;
-                } elseif ( class_exists( 'WRE_Logger' ) ) {
-                    \WRE_Logger::add(
-                        sprintf( 'Trial expiration email dropped for user #%1$d after %2$d attempts.', $user_id, $attempts ),
-                        'trial'
-                    );
-                }
-            }
-
-            self::save_trial_queue( $remaining );
-
-            return $processed;
+            return (bool) $sent;
         }
 
         /**
@@ -174,28 +90,6 @@ if ( ! class_exists( 'WRE_Orders' ) ) {
         }
 
         /**
-         * Execute manual test routines covering order and trial notifications.
-         *
-         * @return array{order:bool|null,trials:int}
-         */
-        public static function run_manual_tests() {
-            $results = array(
-                'order'  => null,
-                'trials' => 0,
-            );
-
-            $last_order = self::get_last_order_id();
-
-            if ( $last_order > 0 ) {
-                $results['order'] = self::send_order_confirmation_email( $last_order, 'instant' );
-            }
-
-            $results['trials'] = self::process_pending_trial_jobs( true );
-
-            return $results;
-        }
-
-        /**
          * Persist the last order identifier processed by the engine.
          *
          * @param int $order_id Order identifier.
@@ -205,58 +99,18 @@ if ( ! class_exists( 'WRE_Orders' ) ) {
         }
 
         /**
-         * Store a trial expiration job for later dispatch.
+         * Replay the most recent order confirmation email, if available.
          *
-         * @param int   $user_id WordPress user identifier.
-         * @param array $context Additional job context.
+         * @return bool|null True if resent, false on failure, null when no order recorded.
          */
-        protected static function queue_trial_job( $user_id, $context = array() ) {
-            $queue = array_filter(
-                self::get_trial_queue(),
-                static function ( $job ) use ( $user_id ) {
-                    if ( ! is_array( $job ) || ! isset( $job['user_id'] ) ) {
-                        return false;
-                    }
+        public static function replay_last_confirmation() {
+            $order_id = self::get_last_order_id();
 
-                    return absint( $job['user_id'] ) !== $user_id;
-                }
-            );
-
-            $queue[] = array(
-                'user_id'   => absint( $user_id ),
-                'context'   => is_array( $context ) ? $context : array(),
-                'queued_at' => current_time( 'timestamp', true ),
-                'attempts'  => 0,
-            );
-
-            self::save_trial_queue( $queue );
-
-            if ( class_exists( 'WRE_Logger' ) ) {
-                \WRE_Logger::add(
-                    sprintf( 'Trial expiration detected for user #%d; email queued for delivery.', $user_id ),
-                    'trial'
-                );
+            if ( $order_id <= 0 ) {
+                return null;
             }
-        }
 
-        /**
-         * Retrieve the persisted trial queue.
-         *
-         * @return array<int, array<string, mixed>>
-         */
-        protected static function get_trial_queue() {
-            $queue = get_option( self::OPTION_TRIAL_QUEUE, array() );
-
-            return is_array( $queue ) ? $queue : array();
-        }
-
-        /**
-         * Persist the trial queue.
-         *
-         * @param array<int, array<string, mixed>> $queue Trial queue payload.
-         */
-        protected static function save_trial_queue( $queue ) {
-            update_option( self::OPTION_TRIAL_QUEUE, array_values( $queue ), false );
+            return self::send_order_confirmation_email( $order_id, 'instant' );
         }
     }
 }
