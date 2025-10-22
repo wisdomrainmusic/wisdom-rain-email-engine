@@ -116,13 +116,18 @@ if ( ! class_exists( 'WRE_Cron' ) ) {
             if ( self::can_queue_more() ) {
                 self::queue_comeback_emails();
             }
+
+            if ( class_exists( 'WRE_Email_Queue' ) ) {
+                // Process queued emails after reminders are added.
+                \WRE_Email_Queue::process_queue();
+            }
         }
 
         /**
          * Queue verification reminders for users who have not completed verification.
          */
         protected static function queue_verify_reminders() {
-            if ( ! class_exists( 'WRE_Verify' ) || ! class_exists( 'WRE_Email_Queue' ) ) {
+            if ( ! class_exists( 'WRE_Verify' ) || ! class_exists( 'WRE_Email_Queue' ) || ! class_exists( 'WRE_Email_Sender' ) ) {
                 return;
             }
 
@@ -192,7 +197,7 @@ if ( ! class_exists( 'WRE_Cron' ) ) {
                     continue;
                 }
 
-                if ( self::queue_email( 'wre_send_verify_reminder', array( $user_id ) ) ) {
+                if ( self::queue_email( 'verify-reminder', $user_id ) ) {
                     update_user_meta( $user_id, self::META_VERIFY_REMINDER, $now );
                 }
             }
@@ -202,7 +207,7 @@ if ( ! class_exists( 'WRE_Cron' ) ) {
          * Queue reminders for users whose paid plan is nearing expiration.
          */
         protected static function queue_plan_reminders() {
-            if ( ! class_exists( 'WRE_Email_Queue' ) || ! class_exists( 'WRPA_Access' ) ) {
+            if ( ! class_exists( 'WRE_Email_Queue' ) || ! class_exists( 'WRPA_Access' ) || ! class_exists( 'WRE_Email_Sender' ) ) {
                 return;
             }
 
@@ -231,7 +236,7 @@ if ( ! class_exists( 'WRE_Cron' ) ) {
          * Queue comeback emails for users whose plan expired 30 days ago.
          */
         protected static function queue_comeback_emails() {
-            if ( ! class_exists( 'WRE_Email_Queue' ) || ! class_exists( 'WRPA_Access' ) ) {
+            if ( ! class_exists( 'WRE_Email_Queue' ) || ! class_exists( 'WRPA_Access' ) || ! class_exists( 'WRE_Email_Sender' ) ) {
                 return;
             }
 
@@ -264,7 +269,7 @@ if ( ! class_exists( 'WRE_Cron' ) ) {
                     continue;
                 }
 
-                if ( self::queue_email( 'wre_send_comeback', array( $user_id, self::COMEBACK_DELAY_DAYS ) ) ) {
+                if ( self::queue_email( 'comeback', $user_id, array( 'days_since_expiry' => self::COMEBACK_DELAY_DAYS ) ) ) {
                     update_user_meta( $user_id, self::META_COMEBACK_SENT, $now );
                 }
             }
@@ -303,14 +308,15 @@ if ( ! class_exists( 'WRE_Cron' ) ) {
         }
 
         /**
-         * Queue a job if the per-run limit has not been exceeded.
+         * Queue a templated email if the per-run limit has not been exceeded.
          *
-         * @param string $hook Action hook to run when the queue processes the job.
-         * @param array  $args Arguments passed to the action when executed.
+         * @param string $template Template slug handled by the queue processor.
+         * @param int    $user_id  WordPress user identifier.
+         * @param array  $context  Optional context passed to the queue job.
          *
          * @return bool True when the job is enqueued, false otherwise.
          */
-        protected static function queue_email( $hook, $args = array() ) {
+        protected static function queue_email( $template, $user_id, $context = array() ) {
             if ( ! class_exists( 'WRE_Email_Queue' ) ) {
                 return false;
             }
@@ -319,7 +325,11 @@ if ( ! class_exists( 'WRE_Cron' ) ) {
                 return false;
             }
 
-            WRE_Email_Queue::enqueue( $hook, $args );
+            $queued = \WRE_Email_Queue::add_to_queue( $user_id, $template, $context );
+
+            if ( ! $queued ) {
+                return false;
+            }
 
             self::$queued_during_run++;
 
@@ -353,7 +363,7 @@ if ( ! class_exists( 'WRE_Cron' ) ) {
                     continue;
                 }
 
-                if ( ! self::queue_email( 'wre_send_plan_reminder', array( $user_id, absint( $days ) ) ) ) {
+                if ( ! self::queue_email( 'plan-reminder', $user_id, array( 'days_remaining' => absint( $days ) ) ) ) {
                     return;
                 }
 
