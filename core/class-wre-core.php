@@ -115,6 +115,7 @@ if ( ! class_exists( 'WRE_Core' ) ) {
             $dependencies = array(
                 'admin/class-wrpa-admin.php',
                 'admin/class-wre-admin.php',
+                'admin/class-wre-campaigns.php',
                 'core/class-wrpa-codex-command.php',
                 'core/class-wre-email-sender.php',
                 'core/class-wre-verify.php',
@@ -142,6 +143,10 @@ if ( ! class_exists( 'WRE_Core' ) ) {
 
             if ( class_exists( 'WRE_Admin' ) ) {
                 \WRE_Admin::init();
+            }
+
+            if ( class_exists( 'WRE_Campaigns' ) ) {
+                \WRE_Campaigns::init();
             }
 
             if ( class_exists( 'WRE_Templates' ) ) {

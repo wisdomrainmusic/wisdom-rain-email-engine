@@ -71,6 +71,22 @@ if ( ! class_exists( 'WRE_Templates' ) ) {
                     'label'       => __( 'Come Back Message', 'wisdom-rain-email-engine' ),
                     'description' => __( 'Invites lapsed members to rejoin the community.', 'wisdom-rain-email-engine' ),
                 ),
+                'newyear'               => array(
+                    'label'       => __( 'New Year Renewal', 'wisdom-rain-email-engine' ),
+                    'description' => __( 'Seasonal campaign encouraging members to recommit at the start of the year.', 'wisdom-rain-email-engine' ),
+                ),
+                'valentine'             => array(
+                    'label'       => __( 'Valentine Gratitude', 'wisdom-rain-email-engine' ),
+                    'description' => __( 'Celebrates community connections with a Valentine themed message.', 'wisdom-rain-email-engine' ),
+                ),
+                'summer'                => array(
+                    'label'       => __( 'Summer Reset', 'wisdom-rain-email-engine' ),
+                    'description' => __( 'Highlights warm-season programming for members seeking a reset.', 'wisdom-rain-email-engine' ),
+                ),
+                'exclusive'             => array(
+                    'label'       => __( 'Exclusive Drop', 'wisdom-rain-email-engine' ),
+                    'description' => __( 'Announces limited releases or premium practice bundles.', 'wisdom-rain-email-engine' ),
+                ),
             );
         }
 
