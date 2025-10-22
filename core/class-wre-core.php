@@ -105,6 +105,7 @@ if ( ! class_exists( 'WRE_Core' ) ) {
                 'admin/class-wrpa-admin.php',
                 'admin/class-wre-admin.php',
                 'core/class-wrpa-codex-command.php',
+                'core/class-wre-email-sender.php',
                 'includes/class-wre-email.php',
                 'includes/class-wre-queue.php',
                 'includes/class-wre-cron.php',
@@ -145,6 +146,10 @@ if ( ! class_exists( 'WRE_Core' ) ) {
 
             if ( class_exists( 'WRE_Cron' ) ) {
                 \WRE_Cron::init();
+            }
+
+            if ( class_exists( 'WRE_Email_Sender' ) ) {
+                \WRE_Email_Sender::init();
             }
         }
 
