@@ -542,7 +542,14 @@ if ( ! class_exists( 'WRE_Email_Sender' ) ) {
                 return false;
             }
 
-            $result = wp_mail( $email, $subject, $body, self::get_default_headers() );
+            $context = array(
+                'template'      => $template,
+                'user_id'       => $user_id,
+                'delivery_mode' => $delivery_mode,
+                'log_type'      => $log_type,
+            );
+
+            $result = self::send_raw_email( $email, $subject, $body, self::get_default_headers(), $context );
 
             if ( class_exists( 'WRE_Logger' ) ) {
                 $template = sanitize_key( $template );
@@ -588,6 +595,42 @@ if ( ! class_exists( 'WRE_Email_Sender' ) ) {
         }
 
         /**
+         * Dispatch a raw email payload through the configured mailer.
+         *
+         * @param string $email   Recipient address.
+         * @param string $subject Email subject.
+         * @param string $body    Email body content.
+         * @param array  $headers List of headers to include with the message.
+         * @param array  $context Context data describing the outbound email.
+         *
+         * @return bool
+         */
+        public static function send_raw_email( $email, $subject, $body, $headers = array(), $context = array() ) {
+            $email = sanitize_email( $email );
+
+            if ( '' === $email || '' === $subject || '' === $body ) {
+                return false;
+            }
+
+            $headers = self::normalize_headers( $headers );
+            $context = self::normalize_context( $context );
+
+            $use_wp_mail = apply_filters( 'wre_mailer_use_wp_mail', true, $context );
+
+            if ( $use_wp_mail ) {
+                return self::send_via_wp_mail( $email, $subject, $body, $headers );
+            }
+
+            $result = self::send_via_phpmailer( $email, $subject, $body, $headers, $context );
+
+            if ( null === $result || false === $result ) {
+                return self::send_via_wp_mail( $email, $subject, $body, $headers );
+            }
+
+            return (bool) $result;
+        }
+
+        /**
          * Append unsubscribe placeholder data when consent tools are available.
          *
          * @param array $context  Placeholder values to send to the template engine.
@@ -621,6 +664,287 @@ if ( ! class_exists( 'WRE_Email_Sender' ) ) {
                 'Content-Type: text/html; charset=UTF-8',
                 'From: Wisdom Rain <no-reply@wisdomrainbookmusic.com>',
             );
+        }
+
+        /**
+         * Normalize headers to a sequential array of strings.
+         *
+         * @param array|string $headers Header list or string.
+         *
+         * @return array
+         */
+        protected static function normalize_headers( $headers ) {
+            if ( empty( $headers ) ) {
+                return array();
+            }
+
+            if ( ! is_array( $headers ) ) {
+                $headers = array( (string) $headers );
+            }
+
+            $normalized = array();
+
+            foreach ( $headers as $header ) {
+                $header = trim( (string) $header );
+
+                if ( '' !== $header ) {
+                    $normalized[] = $header;
+                }
+            }
+
+            return $normalized;
+        }
+
+        /**
+         * Ensure outbound email context includes expected defaults.
+         *
+         * @param array $context Context describing the outbound email.
+         *
+         * @return array
+         */
+        protected static function normalize_context( $context ) {
+            if ( ! is_array( $context ) ) {
+                $context = array();
+            }
+
+            $defaults = array(
+                'template'      => '',
+                'user_id'       => 0,
+                'delivery_mode' => 'standard',
+                'log_type'      => '',
+            );
+
+            $context = wp_parse_args( $context, $defaults );
+
+            $context['template']      = sanitize_key( $context['template'] );
+            $context['user_id']       = absint( $context['user_id'] );
+            $context['delivery_mode'] = in_array( $context['delivery_mode'], array( 'standard', 'instant', 'cron' ), true ) ? $context['delivery_mode'] : 'standard';
+            $context['log_type']      = sanitize_key( $context['log_type'] );
+
+            return $context;
+        }
+
+        /**
+         * Send an email using WordPress' wp_mail() function.
+         *
+         * @param string $email   Recipient address.
+         * @param string $subject Email subject.
+         * @param string $body    Email body.
+         * @param array  $headers Header list.
+         *
+         * @return bool
+         */
+        protected static function send_via_wp_mail( $email, $subject, $body, $headers ) {
+            return (bool) wp_mail( $email, $subject, $body, $headers );
+        }
+
+        /**
+         * Attempt to send an email using a standalone PHPMailer instance.
+         *
+         * @param string $email   Recipient address.
+         * @param string $subject Email subject.
+         * @param string $body    Email body.
+         * @param array  $headers Header list.
+         * @param array  $context Context describing the outbound email.
+         *
+         * @return bool|null Returns null when PHPMailer is unavailable.
+         */
+        protected static function send_via_phpmailer( $email, $subject, $body, $headers, $context ) {
+            if ( ! class_exists( '\\PHPMailer\\PHPMailer\\PHPMailer' ) ) {
+                return null;
+            }
+
+            try {
+                $mailer = new \PHPMailer\PHPMailer\PHPMailer( true );
+            } catch ( \Exception $e ) {
+                return false;
+            }
+
+            $mailer->CharSet = 'UTF-8';
+            $mailer->clearAllRecipients();
+            $mailer->clearAttachments();
+            $mailer->isHTML( true );
+            $mailer->Subject = $subject;
+            $mailer->Body    = $body;
+            $mailer->AltBody = wp_strip_all_tags( $body );
+
+            try {
+                $mailer->addAddress( $email );
+            } catch ( \PHPMailer\PHPMailer\Exception $e ) {
+                return false;
+            }
+
+            list( $from_email, $from_name ) = self::resolve_from_header( $headers );
+
+            try {
+                $mailer->setFrom( $from_email, $from_name ?: $from_email, false );
+            } catch ( \PHPMailer\PHPMailer\Exception $e ) {
+                try {
+                    $mailer->setFrom( $from_email, '', false );
+                } catch ( \PHPMailer\PHPMailer\Exception $e ) {
+                    return false;
+                }
+            }
+
+            self::apply_header_recipients( $mailer, $headers );
+            self::apply_additional_headers( $mailer, $headers );
+
+            try {
+                return $mailer->send();
+            } catch ( \PHPMailer\PHPMailer\Exception $e ) {
+                return false;
+            }
+        }
+
+        /**
+         * Determine the From address from the provided headers.
+         *
+         * @param array $headers Header list.
+         *
+         * @return array{0:string,1:string}
+         */
+        protected static function resolve_from_header( $headers ) {
+            $header = self::find_header( $headers, 'from' );
+
+            if ( '' !== $header ) {
+                list( $email, $name ) = self::parse_address( $header );
+
+                if ( '' !== $email ) {
+                    return array( $email, $name );
+                }
+            }
+
+            $default_email = get_option( 'admin_email', '' );
+
+            if ( '' === $default_email ) {
+                $host          = wp_parse_url( home_url(), PHP_URL_HOST );
+                $default_email = $host ? 'no-reply@' . $host : 'no-reply@example.com';
+            }
+
+            return array( sanitize_email( $default_email ), get_bloginfo( 'name', 'display' ) );
+        }
+
+        /**
+         * Apply Reply-To, CC, and BCC headers to the PHPMailer instance.
+         *
+         * @param \PHPMailer\PHPMailer\PHPMailer $mailer  Mailer instance.
+         * @param array                           $headers Header list.
+         */
+        protected static function apply_header_recipients( $mailer, $headers ) {
+            foreach ( array( 'reply-to' => 'addReplyTo', 'cc' => 'addCC', 'bcc' => 'addBCC' ) as $header => $method ) {
+                $value = self::find_header( $headers, $header );
+
+                if ( '' === $value ) {
+                    continue;
+                }
+
+                foreach ( self::split_addresses( $value ) as $address ) {
+                    list( $email, $name ) = self::parse_address( $address );
+
+                    if ( '' === $email ) {
+                        continue;
+                    }
+
+                    try {
+                        $mailer->{$method}( $email, $name );
+                    } catch ( \PHPMailer\PHPMailer\Exception $e ) {
+                        continue;
+                    }
+                }
+            }
+        }
+
+        /**
+         * Apply additional headers such as Return-Path and Content-Type.
+         *
+         * @param \PHPMailer\PHPMailer\PHPMailer $mailer  Mailer instance.
+         * @param array                           $headers Header list.
+         */
+        protected static function apply_additional_headers( $mailer, $headers ) {
+            $return_path = sanitize_email( self::find_header( $headers, 'return-path' ) );
+
+            if ( '' !== $return_path ) {
+                $mailer->Sender = $return_path;
+            }
+
+            $content_type = self::find_header( $headers, 'content-type' );
+
+            if ( '' !== $content_type ) {
+                if ( false !== stripos( $content_type, 'text/plain' ) ) {
+                    $mailer->isHTML( false );
+                } elseif ( false !== stripos( $content_type, 'text/html' ) ) {
+                    $mailer->isHTML( true );
+                }
+            }
+        }
+
+        /**
+         * Retrieve a header value from the list, matching case-insensitively.
+         *
+         * @param array  $headers Header list.
+         * @param string $needle  Header name to locate.
+         *
+         * @return string
+         */
+        protected static function find_header( $headers, $needle ) {
+            $needle = strtolower( $needle );
+
+            foreach ( $headers as $header ) {
+                $parts = explode( ':', $header, 2 );
+
+                if ( 2 !== count( $parts ) ) {
+                    continue;
+                }
+
+                if ( strtolower( trim( $parts[0] ) ) === $needle ) {
+                    return trim( $parts[1] );
+                }
+            }
+
+            return '';
+        }
+
+        /**
+         * Split a comma-delimited list of addresses.
+         *
+         * @param string $addresses Comma-delimited addresses.
+         *
+         * @return array
+         */
+        protected static function split_addresses( $addresses ) {
+            if ( '' === $addresses ) {
+                return array();
+            }
+
+            $parts = array_map( 'trim', explode( ',', $addresses ) );
+
+            return array_filter( $parts );
+        }
+
+        /**
+         * Parse a single address into email and name components.
+         *
+         * @param string $address Address string.
+         *
+         * @return array{0:string,1:string}
+         */
+        protected static function parse_address( $address ) {
+            $address = trim( $address );
+
+            if ( preg_match( '/(.*)<(.+)>/', $address, $matches ) ) {
+                $email = sanitize_email( trim( $matches[2] ) );
+                $name  = trim( $matches[1] );
+                $name  = trim( $name, "\"' " );
+            } else {
+                $email = sanitize_email( $address );
+                $name  = '';
+            }
+
+            if ( '' === $email ) {
+                return array( '', '' );
+            }
+
+            return array( $email, $name );
         }
 
         /**

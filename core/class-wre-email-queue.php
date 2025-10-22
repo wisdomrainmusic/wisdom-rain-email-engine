@@ -308,6 +308,17 @@ if ( ! class_exists( 'WRE_Email_Queue' ) ) {
 
             $headers = array( 'Content-Type: text/html; charset=UTF-8' );
 
+            $context = array(
+                'template'      => $template,
+                'user_id'       => $user_id,
+                'delivery_mode' => 'cron',
+                'log_type'      => 'queue',
+            );
+
+            if ( class_exists( 'WRE_Email_Sender' ) && method_exists( 'WRE_Email_Sender', 'send_raw_email' ) ) {
+                return \WRE_Email_Sender::send_raw_email( $email, $subject, $body, $headers, $context );
+            }
+
             return wp_mail( $email, $subject, $body, $headers );
         }
 
