@@ -14,8 +14,23 @@ if ( ! class_exists( 'WRE_Logger' ) ) {
      * Stores up to MAX_LOGS email engine events inside wp_options.
      */
     class WRE_Logger {
-        const OPTION_KEY = '_wre_log_entries';
-        const MAX_LOGS   = 500;
+        const OPTION_KEY   = '_wre_log_entries';
+        const OPTION_TOTAL = 'wre_log_totals';
+        const MAX_LOGS     = 500;
+
+        /**
+         * Default aggregate counters persisted in the totals option.
+         *
+         * @var array<string, int>
+         */
+        protected static $default_totals = array(
+            'sent'    => 0,
+            'instant' => 0,
+            'failed'  => 0,
+            'queue'   => 0,
+            'cron'    => 0,
+            'total'   => 0,
+        );
 
         /**
          * Add log entry
@@ -65,16 +80,18 @@ if ( ! class_exists( 'WRE_Logger' ) ) {
          * @return array<string, int>
          */
         public static function get_stats( $logs = null ) {
-            $totals = array(
-                'sent'    => 0,
-                'failed'  => 0,
-                'queue'   => 0,
-                'cron'    => 0,
-                'instant' => 0,
+            $totals = self::get_totals();
+
+            $stats = array(
+                'sent'    => isset( $totals['sent'] ) ? absint( $totals['sent'] ) : 0,
+                'instant' => isset( $totals['instant'] ) ? absint( $totals['instant'] ) : 0,
+                'failed'  => isset( $totals['failed'] ) ? absint( $totals['failed'] ) : 0,
+                'queue'   => isset( $totals['queue'] ) ? absint( $totals['queue'] ) : 0,
+                'cron'    => isset( $totals['cron'] ) ? absint( $totals['cron'] ) : 0,
+                'total'   => isset( $totals['total'] ) ? absint( $totals['total'] ) : 0,
                 'order'   => 0,
                 'trial'   => 0,
                 'verify'  => 0,
-                'total'   => 0,
             );
 
             if ( null === $logs ) {
@@ -82,7 +99,7 @@ if ( ! class_exists( 'WRE_Logger' ) ) {
             }
 
             if ( ! is_array( $logs ) ) {
-                return $totals;
+                return $stats;
             }
 
             foreach ( $logs as $entry ) {
@@ -93,38 +110,21 @@ if ( ! class_exists( 'WRE_Logger' ) ) {
                 $type = isset( $entry['type'] ) ? strtoupper( sanitize_key( $entry['type'] ) ) : '';
 
                 switch ( $type ) {
-                    case 'SENT':
-                        $totals['sent']++;
-                        break;
-                    case 'FAILED':
-                        $totals['failed']++;
-                        break;
-                    case 'QUEUE':
-                        $totals['queue']++;
-                        break;
-                    case 'CRON':
-                        $totals['cron']++;
-                        break;
-                    case 'INSTANT':
-                        $totals['instant']++;
-                        break;
                     case 'ORDER':
-                        $totals['order']++;
+                        $stats['order']++;
                         break;
                     case 'TRIAL':
-                        $totals['trial']++;
+                        $stats['trial']++;
                         break;
                     case 'VERIFY':
-                        $totals['verify']++;
+                        $stats['verify']++;
                         break;
                     default:
                         break;
                 }
-
-                $totals['total']++;
             }
 
-            return $totals;
+            return $stats;
         }
 
         /**
@@ -132,6 +132,49 @@ if ( ! class_exists( 'WRE_Logger' ) ) {
          */
         public static function clear() {
             delete_option( self::OPTION_KEY );
+            delete_option( self::OPTION_TOTAL );
+        }
+
+        /**
+         * Retrieve persisted aggregate counters.
+         *
+         * @return array<string, int>
+         */
+        public static function get_totals() {
+            $totals = get_option( self::OPTION_TOTAL, array() );
+
+            if ( ! is_array( $totals ) ) {
+                $totals = array();
+            }
+
+            return array_merge( self::$default_totals, array_intersect_key( array_map( 'absint', $totals ), self::$default_totals ) );
+        }
+
+        /**
+         * Increment a persisted counter used for the admin dashboard statistics.
+         *
+         * @param string $key Counter identifier.
+         */
+        public static function increment( $key ) {
+            $key = sanitize_key( $key );
+
+            if ( '' === $key ) {
+                return;
+            }
+
+            $totals = self::get_totals();
+
+            if ( ! array_key_exists( $key, $totals ) ) {
+                return;
+            }
+
+            $totals[ $key ] = absint( $totals[ $key ] ) + 1;
+
+            if ( 'total' !== $key && 'instant' !== $key ) {
+                $totals['total'] = absint( $totals['total'] ) + 1;
+            }
+
+            update_option( self::OPTION_TOTAL, $totals, false );
         }
 
         /**

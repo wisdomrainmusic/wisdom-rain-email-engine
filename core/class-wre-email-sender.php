@@ -570,9 +570,15 @@ if ( ! class_exists( 'WRE_Email_Sender' ) ) {
                     } else {
                         $type = ( 'instant' === $delivery_mode ) ? 'instant' : ( 'cron' === $delivery_mode ? 'cron' : 'sent' );
                     }
+                    \WRE_Logger::increment( 'sent' );
+
+                    if ( 'instant' === $delivery_mode ) {
+                        \WRE_Logger::increment( 'instant' );
+                    }
                 } else {
                     $message = sprintf( 'Email "%s" failed for user #%d.', $template, $user_id );
                     $type    = $log_type ? $log_type : 'failed';
+                    \WRE_Logger::increment( 'failed' );
                 }
 
                 \WRE_Logger::add( $message, $type );
