@@ -43,6 +43,10 @@ if ( ! class_exists( 'WRE_Templates' ) ) {
                     'label'       => __( 'Trial Expired', 'wisdom-rain-email-engine' ),
                     'description' => __( 'Informs members that their trial access has ended.', 'wisdom-rain-email-engine' ),
                 ),
+                'subscription-expired'  => array(
+                    'label'       => __( 'Subscription Expired', 'wisdom-rain-email-engine' ),
+                    'description' => __( 'Alerts members that their subscription has ended.', 'wisdom-rain-email-engine' ),
+                ),
                 'event-invite'          => array(
                     'label'       => __( 'Event Invitation', 'wisdom-rain-email-engine' ),
                     'description' => __( 'Invites users to upcoming Wisdom Rain experiences.', 'wisdom-rain-email-engine' ),
@@ -454,19 +458,25 @@ if ( ! class_exists( 'WRE_Templates' ) ) {
          * @return array<int, string>
          */
         protected static function get_template_paths( $slug ) {
-            $paths = array();
+            $paths     = array();
+            $filenames = self::get_template_filenames( $slug );
+            $storage   = self::get_storage_paths();
 
-            $storage = self::get_storage_paths();
+            foreach ( $filenames as $filename ) {
+                if ( '' === $filename ) {
+                    continue;
+                }
 
-            if ( ! empty( $storage['path'] ) ) {
-                $paths[] = trailingslashit( $storage['path'] ) . self::get_template_filename( $slug );
+                if ( ! empty( $storage['path'] ) ) {
+                    $paths[] = trailingslashit( $storage['path'] ) . $filename;
+                }
+
+                if ( defined( 'WRE_PATH' ) ) {
+                    $paths[] = trailingslashit( WRE_PATH ) . 'templates/emails/' . $filename;
+                }
             }
 
-            if ( defined( 'WRE_PATH' ) ) {
-                $paths[] = trailingslashit( WRE_PATH ) . 'templates/emails/' . self::get_template_filename( $slug );
-            }
-
-            return $paths;
+            return array_values( array_unique( $paths ) );
         }
 
         /**
@@ -477,7 +487,37 @@ if ( ! class_exists( 'WRE_Templates' ) ) {
          * @return string
          */
         protected static function get_template_filename( $slug ) {
-            return 'email-' . sanitize_key( $slug ) . '.html';
+            $filenames = self::get_template_filenames( $slug );
+
+            $filename = reset( $filenames );
+
+            return $filename ? $filename : 'email-' . sanitize_key( $slug ) . '.html';
+        }
+
+        /**
+         * Retrieve candidate filenames for a template slug, supporting legacy and PHP variants.
+         *
+         * @param string $slug Template identifier.
+         *
+         * @return array<int, string>
+         */
+        protected static function get_template_filenames( $slug ) {
+            $base = 'email-' . sanitize_key( $slug );
+
+            $filenames = array(
+                $base . '.html',
+                $base . '.html.php',
+            );
+
+            /**
+             * Filter the list of template filenames to check for a given slug.
+             *
+             * @param array<int, string> $filenames Candidate filenames.
+             * @param string             $slug      Template identifier.
+             */
+            $filenames = apply_filters( 'wre_template_filenames', $filenames, $slug );
+
+            return array_values( array_unique( array_filter( $filenames ) ) );
         }
 
         /**

@@ -27,6 +27,7 @@ if ( ! class_exists( 'WRE_Email_Sender' ) ) {
             add_action( 'wre_send_verify_reminder', array( __CLASS__, 'send_verify_reminder' ), 10, 1 );
             add_action( 'wre_send_plan_reminder', array( __CLASS__, 'send_plan_reminder' ), 10, 2 );
             add_action( 'wre_send_comeback', array( __CLASS__, 'send_comeback_email' ), 10, 2 );
+            add_action( 'wre_send_subscription_expired', array( __CLASS__, 'send_subscription_expired_email' ), 10, 2 );
         }
 
         /**
@@ -432,6 +433,100 @@ if ( ! class_exists( 'WRE_Email_Sender' ) ) {
         }
 
         /**
+         * Send the subscription expired email to a user.
+         *
+         * @param int    $user_id       WordPress user identifier.
+         * @param array  $context       Optional subscription context.
+         * @param string $delivery_mode Delivery mode for logging context.
+         *
+         * @return bool
+         */
+        public static function send_subscription_expired_email( $user_id, $context = array(), $delivery_mode = 'instant' ) {
+            $user_id = absint( $user_id );
+
+            if ( $user_id <= 0 ) {
+                return false;
+            }
+
+            $user = get_userdata( $user_id );
+
+            if ( ! $user || empty( $user->user_email ) ) {
+                return false;
+            }
+
+            $email = sanitize_email( $user->user_email );
+
+            if ( '' === $email ) {
+                return false;
+            }
+
+            $display_name      = $user->display_name ? $user->display_name : $user->user_login;
+            $plan_name         = '';
+            $plan_interval     = '';
+            $plan_interval_tag = '';
+            $renew_url         = home_url( '/plans/' );
+            $expired_message   = '';
+
+            if ( is_array( $context ) ) {
+                if ( isset( $context['plan_name'] ) ) {
+                    $plan_name = sanitize_text_field( $context['plan_name'] );
+                }
+
+                if ( isset( $context['plan_interval'] ) ) {
+                    $plan_interval = sanitize_text_field( $context['plan_interval'] );
+                }
+
+                if ( isset( $context['renew_url'] ) ) {
+                    $renew_url = esc_url_raw( $context['renew_url'] );
+                }
+
+                $expired_timestamp = 0;
+
+                if ( isset( $context['expired_at'] ) ) {
+                    $expired_timestamp = absint( $context['expired_at'] );
+                } elseif ( isset( $context['expired_date'] ) ) {
+                    $expired_timestamp = absint( $context['expired_date'] );
+                }
+
+                if ( $expired_timestamp > 0 ) {
+                    $expired_message = ' ' . sprintf(
+                        /* translators: %s: localized date */
+                        __( 'on %s', 'wisdom-rain-email-engine' ),
+                        date_i18n( get_option( 'date_format' ), $expired_timestamp )
+                    );
+                }
+            }
+
+            if ( '' === $plan_name ) {
+                $plan_name = __( 'Wisdom Rain subscription', 'wisdom-rain-email-engine' );
+            }
+
+            if ( '' !== $plan_interval ) {
+                $plan_interval_tag = ' ' . $plan_interval;
+            }
+
+            $placeholders = array(
+                'recipient_name' => sanitize_text_field( $display_name ),
+                'plan_name'      => $plan_name,
+                'plan_interval'  => $plan_interval_tag,
+                'renew_url'      => esc_url( $renew_url ),
+                'expired_date'   => $expired_message,
+            );
+
+            $placeholders = apply_filters( 'wre_subscription_expired_placeholders', $placeholders, $user_id, $context );
+            $placeholders = self::add_unsubscribe_context( $placeholders, $user_id );
+
+            $subject = __( 'Your Wisdom Rain subscription has expired', 'wisdom-rain-email-engine' );
+            $body    = self::render_template( 'subscription-expired', $placeholders );
+
+            if ( '' === $body ) {
+                return false;
+            }
+
+            return self::dispatch_email( 'subscription-expired', $user_id, $email, $subject, $body, $delivery_mode, 'subscription' );
+        }
+
+        /**
          * Dispatch an email and record the outcome for logging purposes.
          *
          * @param string $template Template identifier.
@@ -452,17 +547,29 @@ if ( ! class_exists( 'WRE_Email_Sender' ) ) {
             if ( class_exists( 'WRE_Logger' ) ) {
                 $template = sanitize_key( $template );
                 $user_id  = absint( $user_id );
-                $delivery_mode = in_array( $delivery_mode, array( 'standard', 'instant' ), true ) ? $delivery_mode : 'standard';
+                $delivery_mode = in_array( $delivery_mode, array( 'standard', 'instant', 'cron' ), true ) ? $delivery_mode : 'standard';
                 $log_type = sanitize_key( $log_type );
+
+                $mode_label = 'standard';
+
+                if ( 'instant' === $delivery_mode ) {
+                    $mode_label = 'instant';
+                } elseif ( 'cron' === $delivery_mode ) {
+                    $mode_label = 'cron';
+                }
 
                 if ( $result ) {
                     $message = sprintf(
                         'Email "%s" sent for user #%d (%s dispatch).',
                         $template,
                         $user_id,
-                        'instant' === $delivery_mode ? 'instant' : 'standard'
+                        $mode_label
                     );
-                    $type    = $log_type ? $log_type : ( ( 'instant' === $delivery_mode ) ? 'instant' : 'sent' );
+                    if ( $log_type ) {
+                        $type = $log_type;
+                    } else {
+                        $type = ( 'instant' === $delivery_mode ) ? 'instant' : ( 'cron' === $delivery_mode ? 'cron' : 'sent' );
+                    }
                 } else {
                     $message = sprintf( 'Email "%s" failed for user #%d.', $template, $user_id );
                     $type    = $log_type ? $log_type : 'failed';
