@@ -134,19 +134,63 @@ if ( ! class_exists( 'WRE_Logs' ) ) {
                 return '&mdash;';
             }
 
-            $items = array();
+            $order = array( 'job_id', 'status', 'user_id', 'template', 'attempt', 'queued_at' );
+            $ordered = array();
+
+            foreach ( $order as $key ) {
+                if ( array_key_exists( $key, $context ) ) {
+                    $ordered[ $key ] = $context[ $key ];
+                    unset( $context[ $key ] );
+                }
+            }
+
+            $context = array_merge( $ordered, $context );
+            $items   = array();
 
             foreach ( $context as $key => $value ) {
-                $label = ucwords( str_replace( '_', ' ', sanitize_key( $key ) ) );
+                $sanitized_key = sanitize_key( $key );
+                $label         = ucwords( str_replace( '_', ' ', $sanitized_key ) );
 
-                if ( is_array( $value ) ) {
-                    $value = wp_json_encode( $value );
-                } elseif ( is_bool( $value ) ) {
-                    $value = $value ? 'true' : 'false';
-                } elseif ( is_scalar( $value ) ) {
-                    $value = (string) $value;
-                } else {
-                    $value = '';
+                switch ( $sanitized_key ) {
+                    case 'queued_at':
+                        $value = absint( $value );
+
+                        if ( $value > 0 ) {
+                            $format = trim( get_option( 'date_format' ) . ' ' . get_option( 'time_format' ) );
+
+                            if ( '' === $format ) {
+                                $format = 'Y-m-d H:i:s';
+                            }
+
+                            $value = wp_date( $format, $value );
+                        } else {
+                            $value = '';
+                        }
+                        break;
+                    case 'status':
+                        $value = is_scalar( $value ) ? ucfirst( strtolower( (string) $value ) ) : '';
+                        break;
+                    case 'user_id':
+                        $value = absint( $value );
+                        $value = $value > 0 ? '#' . $value : '';
+                        break;
+                    case 'attempt':
+                        $value = is_numeric( $value ) ? (int) $value : '';
+                        break;
+                    case 'template':
+                        $value = is_scalar( $value ) ? str_replace( '-', ' ', (string) $value ) : '';
+                        break;
+                    default:
+                        if ( is_array( $value ) ) {
+                            $value = wp_json_encode( $value );
+                        } elseif ( is_bool( $value ) ) {
+                            $value = $value ? 'true' : 'false';
+                        } elseif ( is_scalar( $value ) ) {
+                            $value = (string) $value;
+                        } else {
+                            $value = '';
+                        }
+                        break;
                 }
 
                 if ( '' === $value ) {
