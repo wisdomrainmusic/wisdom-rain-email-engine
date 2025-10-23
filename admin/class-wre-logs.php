@@ -56,8 +56,9 @@ if ( ! class_exists( 'WRE_Logs' ) ) {
                 echo '<div class="updated"><p>' . esc_html__( 'Logs cleared.', 'wisdom-rain-email-engine' ) . '</p></div>';
             }
 
-            $logs  = WRE_Logger::get();
-            $stats = WRE_Logger::get_stats( $logs );
+            $logs     = WRE_Logger::get();
+            $stats    = WRE_Logger::get_stats( $logs );
+            $summary  = WRE_Logger::summarize_context( $logs );
             ?>
             <div class="wrap">
                 <h1><?php esc_html_e( '📊 WRE Logs & Performance', 'wisdom-rain-email-engine' ); ?></h1>
@@ -89,6 +90,28 @@ if ( ! class_exists( 'WRE_Logs' ) ) {
                         <?php endforeach; ?>
                     </ul>
                 </div>
+
+                <?php if ( self::has_summary_data( $summary ) ) : ?>
+                    <div class="wre-log-summary">
+                        <h2><?php esc_html_e( 'Context Summary', 'wisdom-rain-email-engine' ); ?></h2>
+                        <div class="wre-log-summary__grid">
+                            <?php
+                            $summary_labels = array(
+                                'templates'      => __( 'Templates', 'wisdom-rain-email-engine' ),
+                                'delivery_modes' => __( 'Delivery Modes', 'wisdom-rain-email-engine' ),
+                                'statuses'       => __( 'Statuses', 'wisdom-rain-email-engine' ),
+                                'log_types'      => __( 'Log Types', 'wisdom-rain-email-engine' ),
+                            );
+
+                            foreach ( $summary_labels as $key => $title ) {
+                                $items = isset( $summary[ $key ] ) ? $summary[ $key ] : array();
+
+                                self::render_summary_panel( $title, $items );
+                            }
+                            ?>
+                        </div>
+                    </div>
+                <?php endif; ?>
 
                 <?php if ( empty( $logs ) ) : ?>
                     <p><?php esc_html_e( 'No logs found yet.', 'wisdom-rain-email-engine' ); ?></p>
@@ -165,6 +188,74 @@ if ( ! class_exists( 'WRE_Logs' ) ) {
             }
 
             return implode( '<br />', $items );
+        }
+
+        /**
+         * Determine if the provided summary payload contains displayable data.
+         *
+         * @param mixed $summary Summary payload from the logger.
+         * @return bool
+         */
+        protected static function has_summary_data( $summary ) {
+            if ( empty( $summary ) || ! is_array( $summary ) ) {
+                return false;
+            }
+
+            foreach ( $summary as $group ) {
+                if ( ! empty( $group ) && is_array( $group ) ) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /**
+         * Render a list of summary items for a context dimension.
+         *
+         * @param string                    $title Section title.
+         * @param array<string|int, int>    $items Summary data keyed by slug.
+         * @return void
+         */
+        protected static function render_summary_panel( $title, $items ) {
+            if ( empty( $items ) || ! is_array( $items ) ) {
+                return;
+            }
+
+            echo '<div class="wre-log-summary__section">';
+            echo '<h3>' . esc_html( $title ) . '</h3>';
+            echo '<ul class="wre-log-summary__list">';
+
+            foreach ( $items as $slug => $count ) {
+                $label = is_string( $slug ) ? $slug : (string) $slug;
+                $value = number_format_i18n( absint( $count ) );
+
+                echo '<li class="wre-log-summary__item">';
+                echo '<span class="wre-log-summary__label">' . esc_html( self::format_summary_label( $label ) ) . '</span>';
+                echo '<span class="wre-log-summary__value">' . esc_html( $value ) . '</span>';
+                echo '</li>';
+            }
+
+            echo '</ul>';
+            echo '</div>';
+        }
+
+        /**
+         * Convert a context slug into a human-friendly label.
+         *
+         * @param string $value Raw slug value.
+         * @return string
+         */
+        protected static function format_summary_label( $value ) {
+            $value = (string) $value;
+
+            if ( '' === $value ) {
+                return '';
+            }
+
+            $label = str_replace( array( '-', '_' ), ' ', strtolower( $value ) );
+
+            return ucwords( $label );
         }
     }
 }

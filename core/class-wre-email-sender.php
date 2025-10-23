@@ -551,6 +551,9 @@ if ( ! class_exists( 'WRE_Email_Sender' ) ) {
 
             $result = self::send_raw_email( $email, $subject, $body, self::get_default_headers(), $context );
 
+            $log_context = $context;
+            $log_context['status'] = $result ? 'sent' : 'failed';
+
             if ( class_exists( 'WRE_Logger' ) ) {
                 $template = sanitize_key( $template );
                 $user_id  = absint( $user_id );
@@ -588,7 +591,7 @@ if ( ! class_exists( 'WRE_Email_Sender' ) ) {
                     \WRE_Logger::increment( 'failed' );
                 }
 
-                \WRE_Logger::add( $message, $type );
+                \WRE_Logger::add( $message, $type, $log_context );
             }
 
             return (bool) $result;

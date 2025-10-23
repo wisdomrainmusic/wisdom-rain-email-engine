@@ -35,8 +35,9 @@ if ( ! class_exists( 'WRE_Logger' ) ) {
         /**
          * Add log entry
          *
-         * @param string $message Message to persist.
-         * @param string $type    Log type for filtering.
+         * @param string               $message Message to persist.
+         * @param string               $type    Log type for filtering.
+         * @param array<string, mixed> $context Optional structured context values.
          */
         public static function add( $message, $type = 'info', $context = array() ) {
             $logs = get_option( self::OPTION_KEY, array() );
@@ -126,6 +127,114 @@ if ( ! class_exists( 'WRE_Logger' ) ) {
             }
 
             return $stats;
+        }
+
+        /**
+         * Build aggregate counts from stored log entry context payloads.
+         *
+         * @param array<int, array<string, mixed>>|null $logs Optional pre-fetched log entries.
+         * @return array<string, array<string, int>>
+         */
+        public static function summarize_context( $logs = null ) {
+            if ( null === $logs ) {
+                $logs = get_option( self::OPTION_KEY, array() );
+            }
+
+            if ( ! is_array( $logs ) ) {
+                return array();
+            }
+
+            $summary = array(
+                'templates'      => array(),
+                'delivery_modes' => array(),
+                'statuses'       => array(),
+                'log_types'      => array(),
+            );
+
+            foreach ( $logs as $entry ) {
+                if ( ! is_array( $entry ) || empty( $entry['context'] ) || ! is_array( $entry['context'] ) ) {
+                    if ( isset( $entry['type'] ) ) {
+                        $type = sanitize_key( $entry['type'] );
+
+                        if ( '' !== $type ) {
+                            if ( ! isset( $summary['log_types'][ $type ] ) ) {
+                                $summary['log_types'][ $type ] = 0;
+                            }
+
+                            $summary['log_types'][ $type ]++;
+                        }
+                    }
+
+                    continue;
+                }
+
+                $context = $entry['context'];
+
+                if ( isset( $context['template'] ) ) {
+                    $template = sanitize_key( $context['template'] );
+
+                    if ( '' !== $template ) {
+                        if ( ! isset( $summary['templates'][ $template ] ) ) {
+                            $summary['templates'][ $template ] = 0;
+                        }
+
+                        $summary['templates'][ $template ]++;
+                    }
+                }
+
+                if ( isset( $context['delivery_mode'] ) ) {
+                    $mode = sanitize_key( $context['delivery_mode'] );
+
+                    if ( '' !== $mode ) {
+                        if ( ! isset( $summary['delivery_modes'][ $mode ] ) ) {
+                            $summary['delivery_modes'][ $mode ] = 0;
+                        }
+
+                        $summary['delivery_modes'][ $mode ]++;
+                    }
+                }
+
+                if ( isset( $context['status'] ) ) {
+                    $status = sanitize_key( $context['status'] );
+
+                    if ( '' !== $status ) {
+                        if ( ! isset( $summary['statuses'][ $status ] ) ) {
+                            $summary['statuses'][ $status ] = 0;
+                        }
+
+                        $summary['statuses'][ $status ]++;
+                    }
+                }
+
+                $log_type = '';
+
+                if ( isset( $context['log_type'] ) ) {
+                    $log_type = sanitize_key( $context['log_type'] );
+                }
+
+                if ( '' === $log_type && isset( $entry['type'] ) ) {
+                    $log_type = sanitize_key( $entry['type'] );
+                }
+
+                if ( '' !== $log_type ) {
+                    if ( ! isset( $summary['log_types'][ $log_type ] ) ) {
+                        $summary['log_types'][ $log_type ] = 0;
+                    }
+
+                    $summary['log_types'][ $log_type ]++;
+                }
+            }
+
+            foreach ( $summary as $key => $groups ) {
+                if ( empty( $groups ) || ! is_array( $groups ) ) {
+                    unset( $summary[ $key ] );
+                    continue;
+                }
+
+                arsort( $summary[ $key ] );
+            }
+
+            return $summary;
         }
 
         /**
