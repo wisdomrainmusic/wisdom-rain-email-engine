@@ -104,6 +104,7 @@ if ( ! class_exists( 'WRE_Logs' ) ) {
                             <th><?php esc_html_e( 'Time', 'wisdom-rain-email-engine' ); ?></th>
                             <th><?php esc_html_e( 'Type', 'wisdom-rain-email-engine' ); ?></th>
                             <th><?php esc_html_e( 'Message', 'wisdom-rain-email-engine' ); ?></th>
+                            <th><?php esc_html_e( 'Details', 'wisdom-rain-email-engine' ); ?></th>
                         </tr>
                     </thead>
                     <tbody>
@@ -112,12 +113,58 @@ if ( ! class_exists( 'WRE_Logs' ) ) {
                                 <td><?php echo esc_html( isset( $log['time'] ) ? $log['time'] : '' ); ?></td>
                                 <td><strong><?php echo esc_html( isset( $log['type'] ) ? $log['type'] : '' ); ?></strong></td>
                                 <td><?php echo esc_html( isset( $log['msg'] ) ? $log['msg'] : '' ); ?></td>
+                                <td><?php echo wp_kses_post( self::format_log_context( isset( $log['context'] ) ? $log['context'] : array() ) ); ?></td>
                             </tr>
                         <?php endforeach; ?>
                     </tbody>
                 </table>
             </div>
             <?php
+        }
+
+        /**
+         * Render human-friendly context details for a log entry.
+         *
+         * @param mixed $context Raw context payload.
+         *
+         * @return string
+         */
+        protected static function format_log_context( $context ) {
+            if ( empty( $context ) || ! is_array( $context ) ) {
+                return '&mdash;';
+            }
+
+            $items = array();
+
+            foreach ( $context as $key => $value ) {
+                $label = ucwords( str_replace( '_', ' ', sanitize_key( $key ) ) );
+
+                if ( is_array( $value ) ) {
+                    $value = wp_json_encode( $value );
+                } elseif ( is_bool( $value ) ) {
+                    $value = $value ? 'true' : 'false';
+                } elseif ( is_scalar( $value ) ) {
+                    $value = (string) $value;
+                } else {
+                    $value = '';
+                }
+
+                if ( '' === $value ) {
+                    continue;
+                }
+
+                $items[] = sprintf(
+                    '<span class="wre-log-context__item"><strong>%s:</strong> %s</span>',
+                    esc_html( $label ),
+                    esc_html( $value )
+                );
+            }
+
+            if ( empty( $items ) ) {
+                return '&mdash;';
+            }
+
+            return implode( '<br />', $items );
         }
     }
 }

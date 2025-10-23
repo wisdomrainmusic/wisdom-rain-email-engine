@@ -132,6 +132,7 @@ if ( ! class_exists( 'WRE_Core' ) ) {
                 'admin/class-wre-admin.php',
                 'admin/class-wre-campaigns.php',
                 'admin/class-wre-logs.php',
+                'core/class-wre-async-queue.php',
                 'core/class-wre-logger.php',
                 'core/class-wre-codex-command.php',
                 'core/class-wre-email-sender.php',
@@ -172,6 +173,10 @@ if ( ! class_exists( 'WRE_Core' ) ) {
 
             if ( class_exists( 'WRE_Logs' ) ) {
                 \WRE_Logs::init();
+            }
+
+            if ( class_exists( 'WRE_Async_Queue' ) ) {
+                \WRE_Async_Queue::init();
             }
 
             if ( class_exists( 'WRE_Templates' ) ) {
