@@ -1021,5 +1021,211 @@ if ( ! class_exists( 'WRE_Email_Sender' ) ) {
 
             return \WRE_Templates::render_template( $template, $placeholders );
         }
+
+        /**
+         * Compatibility bridge for legacy template dispatchers with a safe fallback renderer.
+         *
+         * @param int    $user_id  WordPress user identifier.
+         * @param string $template Template slug.
+         * @param array  $context  Template context overrides.
+         *
+         * @return bool
+         */
+        public static function send_template_email( $user_id, $template, $context = array() ) {
+            if ( method_exists( __CLASS__, 'send_template' ) ) {
+                return self::send_template( $user_id, $template, $context );
+            }
+
+            if ( method_exists( __CLASS__, 'dispatch_template' ) ) {
+                return self::dispatch_template( $user_id, $template, $context );
+            }
+
+            $user_id = absint( $user_id );
+
+            if ( $user_id <= 0 ) {
+                if ( class_exists( 'WRE_Logger' ) ) {
+                    \WRE_Logger::add( '[EMAIL] Invalid user ID provided to send_template_email().', 'error' );
+                }
+
+                return false;
+            }
+
+            $user = get_userdata( $user_id );
+
+            if ( ! $user || empty( $user->user_email ) ) {
+                if ( class_exists( 'WRE_Logger' ) ) {
+                    \WRE_Logger::add( sprintf( '[EMAIL] User #%d unavailable for send_template_email().', $user_id ), 'error' );
+                }
+
+                return false;
+            }
+
+            $email = sanitize_email( $user->user_email );
+
+            if ( '' === $email ) {
+                if ( class_exists( 'WRE_Logger' ) ) {
+                    \WRE_Logger::add( sprintf( '[EMAIL] Empty email address for user #%d.', $user_id ), 'error' );
+                }
+
+                return false;
+            }
+
+            $template_slug = sanitize_title_with_dashes( $template );
+
+            if ( '' === $template_slug ) {
+                if ( class_exists( 'WRE_Logger' ) ) {
+                    \WRE_Logger::add( '[EMAIL] Invalid template identifier provided to send_template_email().', 'error' );
+                }
+
+                return false;
+            }
+
+            if ( ! is_array( $context ) ) {
+                $context = array();
+            }
+
+            $delivery_mode = 'standard';
+
+            if ( isset( $context['delivery_mode'] ) ) {
+                $candidate_mode = sanitize_key( $context['delivery_mode'] );
+
+                if ( in_array( $candidate_mode, array( 'standard', 'instant', 'cron' ), true ) ) {
+                    $delivery_mode = $candidate_mode;
+                }
+
+                unset( $context['delivery_mode'] );
+            }
+
+            $log_type = '';
+
+            if ( isset( $context['log_type'] ) ) {
+                $log_type = sanitize_key( $context['log_type'] );
+                unset( $context['log_type'] );
+            }
+
+            $subject = '';
+
+            if ( isset( $context['subject'] ) ) {
+                $subject = wp_strip_all_tags( (string) $context['subject'] );
+                unset( $context['subject'] );
+            }
+
+            $display_name = $user->display_name ? $user->display_name : $user->user_login;
+
+            if ( ! isset( $context['recipient_name'] ) ) {
+                $context['recipient_name'] = sanitize_text_field( $display_name );
+            }
+
+            $context['user_email'] = $email;
+            $context['user_id']    = $user_id;
+
+            $context = self::add_unsubscribe_context( $context, $user_id );
+
+            if ( '' === $subject ) {
+                $readable_template = ucwords( str_replace( '-', ' ', $template_slug ) );
+                /* translators: %s: Email template label. */
+                $subject = sprintf( __( 'Your Wisdom Rain %s Notification', 'wisdom-rain-email-engine' ), $readable_template );
+            }
+
+            /**
+             * Filter the subject line used when dispatching a template email.
+             *
+             * @param string $subject       Calculated subject line.
+             * @param string $template_slug Template identifier.
+             * @param int    $user_id       Recipient user identifier.
+             * @param array  $context       Template context arguments.
+             */
+            $subject = apply_filters( 'wre_send_template_email_subject', $subject, $template_slug, $user_id, $context );
+
+            $body = '';
+
+            if ( class_exists( '\WRE_Templates' ) && method_exists( '\WRE_Templates', 'render_template' ) ) {
+                $body = \WRE_Templates::render_template( $template_slug, $context );
+            }
+
+            if ( '' === $body ) {
+                $body = self::render_legacy_template( $template_slug, $context );
+            }
+
+            if ( '' === $body ) {
+                if ( class_exists( 'WRE_Logger' ) ) {
+                    \WRE_Logger::add( sprintf( '[EMAIL] Template "%s" failed to render for user #%d.', $template_slug, $user_id ), 'error' );
+                }
+
+                return false;
+            }
+
+            $result = self::dispatch_email( $template_slug, $user_id, $email, $subject, $body, $delivery_mode, $log_type );
+
+            if ( class_exists( 'WRE_Logger' ) ) {
+                if ( $result ) {
+                    \WRE_Logger::add( sprintf( '[EMAIL] Template "%s" sent successfully to %s.', $template_slug, $email ), 'info' );
+                } else {
+                    \WRE_Logger::add( sprintf( '[EMAIL] Failed to send template "%s" to %s.', $template_slug, $email ), 'error' );
+                }
+            }
+
+            return $result;
+        }
+
+        /**
+         * Render a template using a legacy PHP include fallback.
+         *
+         * @param string $template_slug Template identifier.
+         * @param array  $context       Template context overrides.
+         *
+         * @return string
+         */
+        protected static function render_legacy_template( $template_slug, $context ) {
+            $plugin_root = '';
+
+            if ( defined( 'WRE_PATH' ) ) {
+                $plugin_root = trailingslashit( WRE_PATH );
+            } elseif ( defined( 'WRE_PLUGIN_DIR' ) ) {
+                $plugin_root = trailingslashit( WRE_PLUGIN_DIR );
+            } else {
+                $plugin_root = trailingslashit( dirname( dirname( __FILE__ ) ) );
+            }
+
+            $candidates = array(
+                $plugin_root . 'templates/emails/' . $template_slug . '.php',
+                $plugin_root . 'templates/emails/email-' . $template_slug . '.php',
+                $plugin_root . 'templates/emails/' . $template_slug . '.html.php',
+                $plugin_root . 'templates/emails/email-' . $template_slug . '.html.php',
+            );
+
+            $template_path = '';
+
+            foreach ( $candidates as $candidate ) {
+                if ( file_exists( $candidate ) ) {
+                    $template_path = $candidate;
+                    break;
+                }
+            }
+
+            if ( '' === $template_path ) {
+                if ( class_exists( 'WRE_Logger' ) ) {
+                    \WRE_Logger::add( sprintf( '[EMAIL] Template file missing for slug "%s".', $template_slug ), 'error' );
+                }
+
+                return '';
+            }
+
+            ob_start();
+
+            $template_context = $context;
+
+            if ( is_array( $template_context ) && ! empty( $template_context ) ) {
+                foreach ( $template_context as $key => $value ) {
+                    if ( is_string( $key ) && '' !== $key && preg_match( '/^[A-Za-z_][A-Za-z0-9_]*$/', $key ) ) {
+                        ${$key} = $value; // phpcs:ignore WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+                    }
+                }
+            }
+
+            include $template_path;
+
+            return (string) ob_get_clean();
+        }
     }
 }

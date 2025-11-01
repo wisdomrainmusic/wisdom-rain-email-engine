@@ -602,6 +602,53 @@ if ( ! class_exists( 'WRE_Email_Queue' ) ) {
                 }
             }
 
+            if ( 'subscription-expired' === $template ) {
+                $user_id = absint( $user_id );
+
+                if ( $user_id <= 0 ) {
+                    self::log(
+                        '[QUEUE] Missing user_id in job: ' . wp_json_encode( $job ),
+                        'failed',
+                        array(
+                            'job_id'   => isset( $job['job_id'] ) ? $job['job_id'] : '',
+                            'template' => $template,
+                        )
+                    );
+
+                    return false;
+                }
+
+                $user = get_user_by( 'ID', $user_id );
+
+                if ( ! $user || empty( $user->user_email ) ) {
+                    self::log(
+                        '[QUEUE] Invalid user for job type ' . $template,
+                        'failed',
+                        array(
+                            'job_id'  => isset( $job['job_id'] ) ? $job['job_id'] : '',
+                            'user_id' => $user_id,
+                        )
+                    );
+
+                    return false;
+                }
+
+                self::log(
+                    sprintf(
+                        '[QUEUE] Preparing to send "%s" to user #%d (%s)',
+                        $template,
+                        $user_id,
+                        $user->user_email
+                    ),
+                    'queue',
+                    array(
+                        'job_id'   => isset( $job['job_id'] ) ? $job['job_id'] : '',
+                        'user_id'  => $user_id,
+                        'template' => $template,
+                    )
+                );
+            }
+
             return self::send_template_email( $user_id, $template, $context );
         }
 
