@@ -1008,6 +1008,32 @@ if ( ! class_exists( 'WRE_Email_Sender' ) ) {
         }
 
         /**
+         * Backward compatible bridge for dispatching template-based emails.
+         *
+         * @param int    $user_id  WordPress user identifier.
+         * @param string $template Template slug.
+         * @param array  $context  Optional context for the template renderer.
+         *
+         * @return bool Whether the email was dispatched successfully.
+         */
+        public static function send_template_email( $user_id, $template, $context = array() ) {
+            // Compatibility bridge for legacy or refactored sender names.
+            if ( method_exists( __CLASS__, 'send_template' ) ) {
+                return self::send_template( $user_id, $template, $context );
+            }
+
+            if ( method_exists( __CLASS__, 'dispatch_template' ) ) {
+                return self::dispatch_template( $user_id, $template, $context );
+            }
+
+            if ( class_exists( 'WRE_Logger' ) ) {
+                WRE_Logger::add( sprintf( '[EMAIL] Missing send_template_email() handler for template "%s"', $template ), 'email' );
+            }
+
+            return false;
+        }
+
+        /**
          * Render the HTML template for transactional emails using placeholders.
          *
          * @param array $placeholders Template replacement values.
