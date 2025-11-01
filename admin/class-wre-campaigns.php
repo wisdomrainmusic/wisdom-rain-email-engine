@@ -194,14 +194,6 @@ if ( ! class_exists( 'WRE_Campaigns' ) ) {
                     'campaign_offer'   => __( 'Upgrade today and unlock early access to new series and guided immersions.', 'wisdom-rain-email-engine' ),
                     'cta_text'         => __( 'Unlock Access', 'wisdom-rain-email-engine' ),
                 ),
-                'special'   => array(
-                    'label'            => __( 'Special Invitation', 'wisdom-rain-email-engine' ),
-                    'subject'          => __( 'Join us for Breathwork + Sound Bath', 'wisdom-rain-email-engine' ),
-                    'headline'         => __( 'A Gentle Invitation Awaits You', 'wisdom-rain-email-engine' ),
-                    'seasonal_message' => __( 'We curated an experience we believe you’ll love — here are the details below.', 'wisdom-rain-email-engine' ),
-                    'campaign_offer'   => __( 'Reserve your spot for our guided Breathwork + Sound Bath session and reconnect with inner calm.', 'wisdom-rain-email-engine' ),
-                    'cta_text'         => __( 'Reserve Your Spot', 'wisdom-rain-email-engine' ),
-                ),
             );
         }
 
