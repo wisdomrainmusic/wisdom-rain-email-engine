@@ -39,6 +39,7 @@ if ( ! class_exists( 'WRE_Logger' ) ) {
          *
          * @param string $message Message to persist.
          * @param string $type    Log type for filtering.
+         * @param array  $context Optional structured context metadata.
          */
         public static function add( $message, $type = 'info', $context = array() ) {
             $entry = array(

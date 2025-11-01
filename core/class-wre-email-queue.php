@@ -108,7 +108,7 @@ if ( ! class_exists( 'WRE_Email_Queue' ) ) {
             }
 
             $job = array(
-                'job_id'   => self::generate_job_id(),
+                'job_id'    => self::generate_job_id(),
                 'user_id'   => $user_id,
                 'template'  => $template,
                 'context'   => self::sanitize_context( $context ),
@@ -125,7 +125,11 @@ if ( ! class_exists( 'WRE_Email_Queue' ) ) {
                 \WRE_Logger::increment( 'queue' );
             }
 
-            self::log( sprintf( 'Queued "%s" email for user #%d.', $template, $user_id ), 'queue' );
+            self::log(
+                sprintf( 'Queued "%s" email for user #%d.', $template, $user_id ),
+                'queue',
+                self::get_job_context( $job, 'queued' )
+            );
 
             self::schedule_next_run();
 
@@ -272,7 +276,11 @@ if ( ! class_exists( 'WRE_Email_Queue' ) ) {
                 self::save_rate_window( $window );
 
                 self::log_job_event( 'success', $job );
-                self::log( sprintf( 'Email sent for template %s (user #%d).', $job['template'], $job['user_id'] ) );
+                self::log(
+                    sprintf( 'Email sent for template %s (user #%d).', $job['template'], $job['user_id'] ),
+                    'queue',
+                    self::get_job_context( $job, 'success' )
+                );
             } else {
                 $attempts = isset( $job['attempts'] ) ? absint( $job['attempts'] ) : 0;
                 $attempts++;
@@ -289,7 +297,8 @@ if ( ! class_exists( 'WRE_Email_Queue' ) ) {
                             isset( $job['user_id'] ) ? absint( $job['user_id'] ) : 0,
                             isset( $job['template'] ) ? $job['template'] : 'unknown'
                         ),
-                        'failed'
+                        'failed',
+                        self::get_job_context( $job, 'retry' )
                     );
                 } else {
                     $job['attempts'] = $attempts;
@@ -301,7 +310,8 @@ if ( ! class_exists( 'WRE_Email_Queue' ) ) {
                             isset( $job['user_id'] ) ? absint( $job['user_id'] ) : 0,
                             isset( $job['template'] ) ? $job['template'] : 'unknown'
                         ),
-                        'failed'
+                        'failed',
+                        self::get_job_context( $job, 'fail' )
                     );
                 }
             }
@@ -398,12 +408,11 @@ if ( ! class_exists( 'WRE_Email_Queue' ) ) {
             }
 
             if ( ! empty( $message ) ) {
-                self::log_job_event( 'retry', $job, $message );
-                self::log(
+                self::log_job_event(
+                    'retry',
+                    $job,
                     $message,
-                    'queue',
                     array(
-                        'job_id'  => isset( $job['job_id'] ) ? $job['job_id'] : '',
                         'task'    => self::ASYNC_TASK,
                         'handler' => class_exists( 'WRE_Async_Queue' ) ? 'async-fallback' : 'inline-fallback',
                     )
@@ -517,17 +526,9 @@ if ( ! class_exists( 'WRE_Email_Queue' ) ) {
          * @param array  $job     Normalised job payload.
          * @param string $message Optional custom message.
          */
-        protected static function log_job_event( $status, $job, $message = '' ) {
-            $status = sanitize_key( $status );
-
-            $context = array(
-                'job_id'   => isset( $job['job_id'] ) ? $job['job_id'] : '',
-                'status'   => $status,
-                'user_id'  => isset( $job['user_id'] ) ? absint( $job['user_id'] ) : 0,
-                'template' => isset( $job['template'] ) ? sanitize_key( $job['template'] ) : '',
-                'attempt'  => isset( $job['attempts'] ) ? absint( $job['attempts'] ) : 0,
-                'queued_at'=> isset( $job['queued_at'] ) ? absint( $job['queued_at'] ) : 0,
-            );
+        protected static function log_job_event( $status, $job, $message = '', $extra_context = array() ) {
+            $status  = sanitize_key( $status );
+            $context = self::get_job_context( $job, $status, $extra_context );
 
             if ( '' === $message ) {
                 switch ( $status ) {
@@ -550,6 +551,43 @@ if ( ! class_exists( 'WRE_Email_Queue' ) ) {
             }
 
             self::log( $message, 'queue', $context );
+        }
+
+        /**
+         * Prepare a sanitised log context payload for a job.
+         *
+         * @param array  $job     Job payload.
+         * @param string $status  Optional status keyword to attach.
+         * @param array  $extra   Optional associative context data.
+         *
+         * @return array<string, mixed>
+         */
+        protected static function get_job_context( $job, $status = '', $extra = array() ) {
+            $normalized = self::normalize_job( $job );
+
+            if ( empty( $normalized ) ) {
+                return array();
+            }
+
+            $context = array(
+                'job_id'   => isset( $normalized['job_id'] ) ? $normalized['job_id'] : '',
+                'user_id'  => isset( $normalized['user_id'] ) ? absint( $normalized['user_id'] ) : 0,
+                'template' => isset( $normalized['template'] ) ? sanitize_key( $normalized['template'] ) : '',
+                'attempt'  => isset( $normalized['attempts'] ) ? absint( $normalized['attempts'] ) : 0,
+                'queued_at'=> isset( $normalized['queued_at'] ) ? absint( $normalized['queued_at'] ) : 0,
+            );
+
+            $status = sanitize_key( $status );
+
+            if ( '' !== $status ) {
+                $context['status'] = $status;
+            }
+
+            if ( ! empty( $extra ) && is_array( $extra ) ) {
+                $context = array_merge( $context, self::sanitize_context( $extra ) );
+            }
+
+            return $context;
         }
 
         /**
@@ -1064,6 +1102,8 @@ if ( ! class_exists( 'WRE_Email_Queue' ) ) {
          * Log queue activity to the PHP error log.
          *
          * @param string $message Message to log.
+         * @param string $type    Optional log channel/type.
+         * @param array  $context Optional associative context payload.
          */
         protected static function log( $message, $type = 'queue', $context = array() ) {
             $message = is_scalar( $message ) ? (string) $message : '';
