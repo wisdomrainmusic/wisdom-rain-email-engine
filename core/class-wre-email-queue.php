@@ -155,8 +155,10 @@ if ( ! class_exists( 'WRE_Email_Queue' ) ) {
             $limit  = self::get_rate_limit();
 
             if ( $window['count'] >= $limit ) {
+                $window['resume_at'] = self::calculate_resume_time( $window );
+                self::save_rate_window( $window );
                 self::log( 'Hourly email limit reached. Deferring queue processing.' );
-                self::schedule_next_window( $window['start'] );
+                self::schedule_next_window( $window['resume_at'] );
 
                 return;
             }
@@ -199,6 +201,12 @@ if ( ! class_exists( 'WRE_Email_Queue' ) ) {
                 self::clear_queue();
             }
 
+            if ( $window['count'] >= $limit ) {
+                $window['resume_at'] = self::calculate_resume_time( $window );
+            } else {
+                $window['resume_at'] = 0;
+            }
+
             self::save_rate_window( $window );
 
             if ( $dispatched > 0 ) {
@@ -207,7 +215,7 @@ if ( ! class_exists( 'WRE_Email_Queue' ) ) {
 
             if ( $window['count'] >= $limit && ! empty( $remaining ) ) {
                 self::log( 'Hourly email limit reached during async dispatch. Deferring remaining jobs.' );
-                self::schedule_next_window( $window['start'] );
+                self::schedule_next_window( $window['resume_at'] );
 
                 return;
             }
@@ -238,8 +246,10 @@ if ( ! class_exists( 'WRE_Email_Queue' ) ) {
             $limit  = self::get_rate_limit();
 
             if ( $window['count'] >= $limit ) {
+                $window['resume_at'] = self::calculate_resume_time( $window );
+                self::save_rate_window( $window );
                 self::log( 'Hourly email limit reached. Deferring queue processing.' );
-                self::schedule_next_window( $window['start'] );
+                self::schedule_next_window( $window['resume_at'] );
 
                 return;
             }
@@ -252,6 +262,13 @@ if ( ! class_exists( 'WRE_Email_Queue' ) ) {
 
             if ( $dispatched ) {
                 $window['count']++;
+
+                if ( $window['count'] >= $limit ) {
+                    $window['resume_at'] = self::calculate_resume_time( $window );
+                } else {
+                    $window['resume_at'] = 0;
+                }
+
                 self::save_rate_window( $window );
 
                 self::log_job_event( 'success', $job );
@@ -304,11 +321,16 @@ if ( ! class_exists( 'WRE_Email_Queue' ) ) {
             $window = self::get_rate_window();
 
             if ( $window['count'] >= $limit ) {
+                $window['resume_at'] = self::calculate_resume_time( $window );
+                self::save_rate_window( $window );
                 self::log( 'Hourly email limit reached after processing; scheduling next window.' );
-                self::schedule_next_window( $window['start'] );
+                self::schedule_next_window( $window['resume_at'] );
 
                 return;
             }
+
+            $window['resume_at'] = 0;
+            self::save_rate_window( $window );
 
             self::schedule_next_run( self::SECONDS_PER_EMAIL );
         }
@@ -802,30 +824,50 @@ if ( ! class_exists( 'WRE_Email_Queue' ) ) {
             $window = get_option( self::OPTION_RATE, array() );
             $now    = time();
 
-            $start = isset( $window['start'] ) ? absint( $window['start'] ) : 0;
-            $count = isset( $window['count'] ) ? absint( $window['count'] ) : 0;
-            $limit = self::get_rate_limit();
+            $start     = isset( $window['start'] ) ? absint( $window['start'] ) : 0;
+            $count     = isset( $window['count'] ) ? absint( $window['count'] ) : 0;
+            $resume_at = isset( $window['resume_at'] ) ? absint( $window['resume_at'] ) : 0;
+            $limit     = self::get_rate_limit();
+
+            $needs_update = false;
 
             if ( $count > $limit ) {
-                $count = $limit;
+                $count        = $limit;
+                $needs_update = true;
             }
 
-            if ( $start <= 0 || ( $now - $start ) >= HOUR_IN_SECONDS ) {
-                $start = $now;
-                $count = 0;
-
-                $window = array(
-                    'start' => $start,
-                    'count' => $count,
-                );
-
-                update_option( self::OPTION_RATE, $window, false );
+            if ( $start <= 0 ) {
+                $start        = $now;
+                $needs_update = true;
             }
 
-            return array(
-                'start' => $start,
-                'count' => $count,
+            if ( $resume_at > 0 && $resume_at < $start ) {
+                $resume_at    = $start + HOUR_IN_SECONDS;
+                $needs_update = true;
+            }
+
+            if ( $resume_at > 0 && $now >= $resume_at ) {
+                $start        = $now;
+                $count        = 0;
+                $resume_at    = 0;
+                $needs_update = true;
+            } elseif ( $resume_at <= 0 && ( $now - $start ) >= HOUR_IN_SECONDS ) {
+                $start        = $now;
+                $count        = 0;
+                $needs_update = true;
+            }
+
+            $normalized = array(
+                'start'     => $start,
+                'count'     => $count,
+                'resume_at' => $resume_at,
             );
+
+            if ( $needs_update ) {
+                update_option( self::OPTION_RATE, $normalized, false );
+            }
+
+            return $normalized;
         }
 
         /**
@@ -834,22 +876,60 @@ if ( ! class_exists( 'WRE_Email_Queue' ) ) {
          * @param array $window Rate window payload.
          */
         protected static function save_rate_window( $window ) {
-            $start = isset( $window['start'] ) ? absint( $window['start'] ) : time();
-            $count = isset( $window['count'] ) ? absint( $window['count'] ) : 0;
-            $limit = self::get_rate_limit();
+            $now       = time();
+            $start     = isset( $window['start'] ) ? absint( $window['start'] ) : $now;
+            $count     = isset( $window['count'] ) ? absint( $window['count'] ) : 0;
+            $resume_at = isset( $window['resume_at'] ) ? absint( $window['resume_at'] ) : 0;
+            $limit     = self::get_rate_limit();
 
             if ( $count > $limit ) {
                 $count = $limit;
             }
 
-            update_option(
-                self::OPTION_RATE,
-                array(
-                    'start' => $start,
-                    'count' => $count,
-                ),
-                false
+            if ( $start <= 0 ) {
+                $start = $now;
+            }
+
+            if ( $resume_at > 0 && $resume_at <= $start ) {
+                $resume_at = $start + HOUR_IN_SECONDS;
+            }
+
+            $payload = array(
+                'start'     => $start,
+                'count'     => $count,
+                'resume_at' => $resume_at > 0 ? max( $resume_at, $now ) : 0,
             );
+
+            update_option( self::OPTION_RATE, $payload, false );
+        }
+
+        /**
+         * Determine when the rate limit window will open again.
+         *
+         * @param array $window Rate window payload.
+         *
+         * @return int Timestamp when dispatching may resume.
+         */
+        protected static function calculate_resume_time( $window ) {
+            $now       = time();
+            $start     = isset( $window['start'] ) ? absint( $window['start'] ) : 0;
+            $resume_at = isset( $window['resume_at'] ) ? absint( $window['resume_at'] ) : 0;
+
+            if ( $start <= 0 ) {
+                $start = $now;
+            }
+
+            $candidate = $start + HOUR_IN_SECONDS;
+
+            if ( $resume_at > $candidate ) {
+                $candidate = $resume_at;
+            }
+
+            if ( $candidate <= $now ) {
+                return $now;
+            }
+
+            return $candidate;
         }
 
         /**
@@ -862,13 +942,15 @@ if ( ! class_exists( 'WRE_Email_Queue' ) ) {
                 return;
             }
 
-            $timestamp = time() + max( 0, absint( $delay ) );
+            $now       = time();
+            $timestamp = $now + max( 0, absint( $delay ) );
+            $window    = self::get_rate_window();
 
-            if ( function_exists( 'wp_clear_scheduled_hook' ) ) {
-                wp_clear_scheduled_hook( self::CRON_HOOK );
+            if ( isset( $window['resume_at'] ) && $window['resume_at'] > $now ) {
+                $timestamp = max( $timestamp, $window['resume_at'] );
             }
 
-            wp_schedule_single_event( $timestamp, self::CRON_HOOK );
+            self::replace_single_event( $timestamp );
         }
 
         /**
@@ -876,28 +958,62 @@ if ( ! class_exists( 'WRE_Email_Queue' ) ) {
          *
          * @param int $window_start Timestamp of the current window start.
          */
-        protected static function schedule_next_window( $window_start ) {
+        protected static function schedule_next_window( $resume_at ) {
             if ( ! function_exists( 'wp_schedule_single_event' ) ) {
                 return;
             }
 
-            $start     = absint( $window_start );
-            $timestamp = ( $start > 0 ? $start : time() ) + HOUR_IN_SECONDS;
+            $target = absint( $resume_at );
 
-            if ( function_exists( 'wp_clear_scheduled_hook' ) ) {
-                wp_clear_scheduled_hook( self::CRON_HOOK );
+            if ( $target <= 0 ) {
+                $target = time();
             }
 
-            wp_schedule_single_event( $timestamp, self::CRON_HOOK );
+            self::replace_single_event( $target );
         }
 
         /**
          * Clear any scheduled queue processor events.
          */
         protected static function clear_schedule() {
-            if ( function_exists( 'wp_clear_scheduled_hook' ) ) {
+            if ( function_exists( 'wp_unschedule_hook' ) ) {
+                wp_unschedule_hook( self::CRON_HOOK );
+            } elseif ( function_exists( 'wp_clear_scheduled_hook' ) ) {
                 wp_clear_scheduled_hook( self::CRON_HOOK );
             }
+        }
+
+        /**
+         * Replace the existing single event with the provided timestamp.
+         *
+         * @param int $timestamp Scheduled timestamp.
+         */
+        protected static function replace_single_event( $timestamp ) {
+            if ( ! function_exists( 'wp_schedule_single_event' ) ) {
+                return;
+            }
+
+            $timestamp = absint( $timestamp );
+
+            if ( $timestamp <= 0 ) {
+                return;
+            }
+
+            if ( function_exists( 'wp_next_scheduled' ) ) {
+                $existing = wp_next_scheduled( self::CRON_HOOK );
+
+                if ( $existing && $existing !== $timestamp ) {
+                    if ( function_exists( 'wp_unschedule_event' ) ) {
+                        wp_unschedule_event( $existing, self::CRON_HOOK );
+                    } elseif ( function_exists( 'wp_unschedule_hook' ) ) {
+                        wp_unschedule_hook( self::CRON_HOOK );
+                    }
+                } elseif ( $existing === $timestamp ) {
+                    return;
+                }
+            }
+
+            wp_schedule_single_event( $timestamp, self::CRON_HOOK );
         }
 
         /**
