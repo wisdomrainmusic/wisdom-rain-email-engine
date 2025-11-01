@@ -631,6 +631,29 @@ if ( ! class_exists( 'WRE_Email_Sender' ) ) {
         }
 
         /**
+         * Deliver an HTML email immediately using the WordPress mailer.
+         *
+         * @param string $to      Recipient email address.
+         * @param string $subject Email subject line.
+         * @param string $body    Email body content.
+         *
+         * @return bool
+         */
+        public static function send_immediate( $to, $subject, $body ) {
+            $to      = sanitize_email( $to );
+            $subject = (string) $subject;
+            $body    = (string) $body;
+
+            if ( '' === $to || '' === $subject || '' === $body ) {
+                return false;
+            }
+
+            $headers = array( 'Content-Type: text/html; charset=UTF-8' );
+
+            return (bool) wp_mail( $to, $subject, $body, $headers );
+        }
+
+        /**
          * Append unsubscribe placeholder data when consent tools are available.
          *
          * @param array $context  Placeholder values to send to the template engine.
@@ -1017,14 +1040,71 @@ if ( ! class_exists( 'WRE_Email_Sender' ) ) {
          * @return bool Whether the email was dispatched successfully.
          */
         public static function send_template_email( $user_id, $template, $context = array() ) {
-            // Fetch user info
-            $user = get_userdata( $user_id );
-            if ( ! $user ) {
-                WRE_Logger::log( '[EMAIL] Invalid user ID provided to send_template_email().', 'ERROR' );
+            // --- [Hotfix] Force direct send for verification emails ---
+            if ( strpos( $template, 'verify' ) !== false ) {
+                $payload = self::prepare_template_email_payload( $user_id, $template, $context );
+
+                if ( false === $payload ) {
+                    return false;
+                }
+
+                $to      = $payload['to'];
+                $subject = $payload['subject'];
+                $body    = $payload['body'];
+
+                if ( class_exists( 'WRE_Logger' ) ) {
+                    WRE_Logger::log( sprintf( '[VERIFY] Immediate verification email send triggered for %s', $to ), 'VERIFY' );
+                }
+
+                if ( class_exists( 'WRE_Mailer' ) && method_exists( 'WRE_Mailer', 'send_immediate' ) ) {
+                    return (bool) WRE_Mailer::send_immediate( $to, $subject, $body );
+                }
+
+                return (bool) self::send_immediate( $to, $subject, $body );
+            }
+
+            $payload = self::prepare_template_email_payload( $user_id, $template, $context );
+
+            if ( false === $payload ) {
                 return false;
             }
 
-            // Template path
+            $to      = $payload['to'];
+            $subject = $payload['subject'];
+            $body    = $payload['body'];
+            $headers = $payload['headers'];
+
+            $sent = wp_mail( $to, $subject, $body, $headers );
+
+            if ( $sent ) {
+                WRE_Logger::log( sprintf( '[EMAIL] Template "%s" sent successfully to %s', $template, $to ), 'INFO' );
+            } else {
+                WRE_Logger::log( sprintf( '[EMAIL] Failed to send template "%s" to %s', $template, $to ), 'ERROR' );
+            }
+
+            return (bool) $sent;
+        }
+
+        /**
+         * Prepare the template payload for dispatch.
+         *
+         * @param int    $user_id  WordPress user identifier.
+         * @param string $template Template slug.
+         * @param array  $context  Optional context passed to the template.
+         *
+         * @return array{to:string,subject:string,body:string,headers:array}|false
+         */
+        protected static function prepare_template_email_payload( $user_id, $template, $context = array() ) {
+            $user = get_userdata( $user_id );
+
+            if ( ! $user ) {
+                if ( class_exists( 'WRE_Logger' ) ) {
+                    WRE_Logger::log( '[EMAIL] Invalid user ID provided to send_template_email().', 'ERROR' );
+                }
+
+                return false;
+            }
+
             $templates_dir  = trailingslashit( dirname( dirname( __FILE__ ) ) ) . 'templates/emails/';
             $possible_files = array(
                 $templates_dir . $template . '.php',
@@ -1042,26 +1122,30 @@ if ( ! class_exists( 'WRE_Email_Sender' ) ) {
             }
 
             if ( '' === $template_path ) {
-                WRE_Logger::log( sprintf( '[EMAIL] Template file missing: %s', $possible_files[2] ), 'ERROR' );
+                if ( class_exists( 'WRE_Logger' ) ) {
+                    WRE_Logger::log( sprintf( '[EMAIL] Template file missing: %s', $possible_files[2] ), 'ERROR' );
+                }
+
                 return false;
             }
 
-            // Generate subject and body
             ob_start();
-            include $template_path;
-            $body = ob_get_clean();
-            $subject = sprintf( 'Your Wisdom Rain %s Notification', str_replace( '-', ' ', ucfirst( $template ) ) );
 
-            // Send via wp_mail()
-            $sent = wp_mail( $user->user_email, $subject, $body, array( 'Content-Type: text/html; charset=UTF-8' ) );
-
-            if ( $sent ) {
-                WRE_Logger::log( sprintf( '[EMAIL] Template "%s" sent successfully to %s', $template, $user->user_email ), 'INFO' );
-            } else {
-                WRE_Logger::log( sprintf( '[EMAIL] Failed to send template "%s" to %s', $template, $user->user_email ), 'ERROR' );
+            if ( is_array( $context ) && ! empty( $context ) ) {
+                extract( $context, EXTR_SKIP ); // phpcs:ignore WordPress.PHP.DontExtract.extract_extract
             }
 
-            return $sent;
+            include $template_path;
+            $body = ob_get_clean();
+
+            $subject = sprintf( 'Your Wisdom Rain %s Notification', str_replace( '-', ' ', ucfirst( $template ) ) );
+
+            return array(
+                'to'      => $user->user_email,
+                'subject' => $subject,
+                'body'    => $body,
+                'headers' => array( 'Content-Type: text/html; charset=UTF-8' ),
+            );
         }
 
         /**
