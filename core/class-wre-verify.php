@@ -49,6 +49,11 @@ if ( ! class_exists( 'WRE_Verify' ) ) {
                 return false;
             }
 
+            // Force instant mode for verification emails
+            if ( empty( $mode ) || $mode === 'auto' ) {
+                $mode = 'instant';
+            }
+
             $mode = in_array( $mode, array( 'instant', 'queue', 'auto' ), true ) ? $mode : 'auto';
             $dispatched = false;
 
