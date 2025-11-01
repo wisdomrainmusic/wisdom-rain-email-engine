@@ -17,6 +17,8 @@ if ( ! class_exists( 'WRE_Logger' ) ) {
         const OPTION_KEY   = '_wre_log_entries';
         const OPTION_TOTAL = 'wre_log_totals';
         const MAX_LOGS     = 500;
+        const CACHE_KEY    = 'wre_log_cache';
+        const CACHE_GROUP  = 'wre';
 
         /**
          * Default aggregate counters persisted in the totals option.
@@ -39,24 +41,34 @@ if ( ! class_exists( 'WRE_Logger' ) ) {
          * @param string $type    Log type for filtering.
          */
         public static function add( $message, $type = 'info', $context = array() ) {
-            $logs = get_option( self::OPTION_KEY, array() );
+            $entry = array(
+                'time'    => current_time( 'mysql' ),
+                'type'    => strtoupper( sanitize_key( $type ) ),
+                'msg'     => self::sanitize_message( $message ),
+                'context' => self::sanitize_context( $context ),
+            );
+
+            $logs = wp_cache_get( self::CACHE_KEY, self::CACHE_GROUP );
+
+            if ( ! is_array( $logs ) ) {
+                $logs = get_option( self::OPTION_KEY, array() );
+            }
 
             if ( ! is_array( $logs ) ) {
                 $logs = array();
             }
 
-            $logs[] = array(
-                'time' => current_time( 'mysql' ),
-                'type' => strtoupper( sanitize_key( $type ) ),
-                'msg'  => self::sanitize_message( $message ),
-                'context' => self::sanitize_context( $context ),
-            );
+            $logs[] = $entry;
 
             if ( count( $logs ) > self::MAX_LOGS ) {
                 $logs = array_slice( $logs, -self::MAX_LOGS );
             }
 
-            update_option( self::OPTION_KEY, $logs, false );
+            wp_cache_set( self::CACHE_KEY, $logs, self::CACHE_GROUP, 600 );
+
+            if ( ! wp_using_ext_object_cache() ) {
+                update_option( self::OPTION_KEY, $logs, false );
+            }
         }
 
         /**
@@ -65,7 +77,11 @@ if ( ! class_exists( 'WRE_Logger' ) ) {
          * @return array<int, array<string, string>>
          */
         public static function get() {
-            $logs = get_option( self::OPTION_KEY, array() );
+            $logs = wp_cache_get( self::CACHE_KEY, self::CACHE_GROUP );
+
+            if ( ! is_array( $logs ) ) {
+                $logs = get_option( self::OPTION_KEY, array() );
+            }
 
             if ( ! is_array( $logs ) ) {
                 return array();
@@ -96,7 +112,11 @@ if ( ! class_exists( 'WRE_Logger' ) ) {
             );
 
             if ( null === $logs ) {
-                $logs = get_option( self::OPTION_KEY, array() );
+                $logs = wp_cache_get( self::CACHE_KEY, self::CACHE_GROUP );
+
+                if ( ! is_array( $logs ) ) {
+                    $logs = get_option( self::OPTION_KEY, array() );
+                }
             }
 
             if ( ! is_array( $logs ) ) {
@@ -132,6 +152,7 @@ if ( ! class_exists( 'WRE_Logger' ) ) {
          * Clear logs
          */
         public static function clear() {
+            wp_cache_delete( self::CACHE_KEY, self::CACHE_GROUP );
             delete_option( self::OPTION_KEY );
             delete_option( self::OPTION_TOTAL );
         }
