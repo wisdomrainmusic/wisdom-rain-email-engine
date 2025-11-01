@@ -8,16 +8,22 @@
  * Text Domain: wisdom-rain-email-engine
  */
 
-if ( ! defined( 'ABSPATH' ) ) {
-    exit;
+if ( defined( 'WP_CLI' ) && WP_CLI ) {
+    require_once __DIR__ . '/core/class-wre-cron.php';
+    require_once __DIR__ . '/core/class-wre-email-queue.php';
+    require_once __DIR__ . '/core/class-wre-logger.php';
+
+    if ( function_exists( 'wp_timezone_string' ) ) {
+        $timezone_string = wp_timezone_string();
+
+        if ( $timezone_string ) {
+            date_default_timezone_set( $timezone_string );
+        }
+    }
 }
 
-if ( defined( 'WP_CLI' ) && WP_CLI && function_exists( 'wp_timezone_string' ) ) {
-    $timezone_string = wp_timezone_string();
-
-    if ( $timezone_string ) {
-        date_default_timezone_set( $timezone_string );
-    }
+if ( ! defined( 'ABSPATH' ) ) {
+    exit;
 }
 
 require_once plugin_dir_path( __FILE__ ) . 'core/class-wre-core.php';
