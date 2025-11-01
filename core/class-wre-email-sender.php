@@ -1017,20 +1017,36 @@ if ( ! class_exists( 'WRE_Email_Sender' ) ) {
          * @return bool Whether the email was dispatched successfully.
          */
         public static function send_template_email( $user_id, $template, $context = array() ) {
-            // Compatibility bridge for legacy or refactored sender names.
-            if ( method_exists( __CLASS__, 'send_template' ) ) {
-                return self::send_template( $user_id, $template, $context );
+            // Fetch user info
+            $user = get_userdata( $user_id );
+            if ( ! $user ) {
+                WRE_Logger::error( '[EMAIL] Invalid user ID provided to send_template_email().' );
+                return false;
             }
 
-            if ( method_exists( __CLASS__, 'dispatch_template' ) ) {
-                return self::dispatch_template( $user_id, $template, $context );
+            // Template path
+            $template_path = WRE_PLUGIN_DIR . 'templates/emails/' . $template . '.php';
+            if ( ! file_exists( $template_path ) ) {
+                WRE_Logger::error( sprintf( '[EMAIL] Template file missing: %s', $template_path ) );
+                return false;
             }
 
-            if ( class_exists( 'WRE_Logger' ) ) {
-                WRE_Logger::add( sprintf( '[EMAIL] Missing send_template_email() handler for template "%s"', $template ), 'email' );
+            // Generate subject and body
+            ob_start();
+            include $template_path;
+            $body = ob_get_clean();
+            $subject = sprintf( 'Your Wisdom Rain %s Notification', str_replace( '-', ' ', ucfirst( $template ) ) );
+
+            // Send via wp_mail()
+            $sent = wp_mail( $user->user_email, $subject, $body, array( 'Content-Type: text/html; charset=UTF-8' ) );
+
+            if ( $sent ) {
+                WRE_Logger::info( sprintf( '[EMAIL] Template "%s" sent successfully to %s', $template, $user->user_email ) );
+            } else {
+                WRE_Logger::error( sprintf( '[EMAIL] Failed to send template "%s" to %s', $template, $user->user_email ) );
             }
 
-            return false;
+            return $sent;
         }
 
         /**
