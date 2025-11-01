@@ -1177,13 +1177,32 @@ if ( ! class_exists( 'WRE_Cron' ) ) {
                 return false;
             }
 
+            $timezone = self::get_site_timezone();
+
             try {
-                $utc      = new DateTime( $registered, new DateTimeZone( 'UTC' ) );
-                $timezone = self::get_site_timezone();
+                if ( function_exists( 'get_date_from_gmt' ) ) {
+                    $localized = get_date_from_gmt( $registered, 'Y-m-d H:i:s' );
 
-                $utc->setTimezone( $timezone );
+                    if ( $localized ) {
+                        $date = new DateTime( $localized, $timezone );
 
-                return (int) $utc->getTimestamp();
+                        return (int) $date->getTimestamp();
+                    }
+                }
+
+                $timestamp = strtotime( $registered . ' UTC' );
+
+                if ( false === $timestamp ) {
+                    return false;
+                }
+
+                $date = DateTime::createFromFormat( 'U', (string) $timestamp, $timezone );
+
+                if ( false === $date ) {
+                    return false;
+                }
+
+                return (int) $date->getTimestamp();
             } catch ( Exception $exception ) {
                 return false;
             }

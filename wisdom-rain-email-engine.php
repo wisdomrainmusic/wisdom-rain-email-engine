@@ -9,16 +9,15 @@
  */
 
 if ( defined( 'WP_CLI' ) && WP_CLI ) {
+    require_once __DIR__ . '/core/class-wre-core.php';
     require_once __DIR__ . '/core/class-wre-cron.php';
     require_once __DIR__ . '/core/class-wre-email-queue.php';
     require_once __DIR__ . '/core/class-wre-logger.php';
 
-    if ( function_exists( 'wp_timezone_string' ) ) {
-        $timezone_string = wp_timezone_string();
+    WRE_Core::boot();
 
-        if ( $timezone_string ) {
-            date_default_timezone_set( $timezone_string );
-        }
+    if ( function_exists( 'wp_timezone_string' ) ) {
+        date_default_timezone_set( wp_timezone_string() );
     }
 }
 
