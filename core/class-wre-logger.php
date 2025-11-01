@@ -60,6 +60,17 @@ if ( ! class_exists( 'WRE_Logger' ) ) {
         }
 
         /**
+         * Record a log entry using the unified logging signature.
+         *
+         * @param string $message Message to persist.
+         * @param string $type    Log type for filtering.
+         * @param array  $context Optional structured context payload.
+         */
+        public static function log( $message, $type = 'INFO', $context = array() ) {
+            self::add( $message, $type, $context );
+        }
+
+        /**
          * Get all logs
          *
          * @return array<int, array<string, string>>

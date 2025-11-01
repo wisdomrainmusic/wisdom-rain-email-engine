@@ -1020,14 +1020,14 @@ if ( ! class_exists( 'WRE_Email_Sender' ) ) {
             // Fetch user info
             $user = get_userdata( $user_id );
             if ( ! $user ) {
-                WRE_Logger::error( '[EMAIL] Invalid user ID provided to send_template_email().' );
+                WRE_Logger::log( '[EMAIL] Invalid user ID provided to send_template_email().', 'ERROR' );
                 return false;
             }
 
             // Template path
             $template_path = trailingslashit( dirname( dirname( __FILE__ ) ) ) . 'templates/emails/' . $template . '.php';
             if ( ! file_exists( $template_path ) ) {
-                WRE_Logger::error( sprintf( '[EMAIL] Template file missing: %s', $template_path ) );
+                WRE_Logger::log( sprintf( '[EMAIL] Template file missing: %s', $template_path ), 'ERROR' );
                 return false;
             }
 
@@ -1041,9 +1041,9 @@ if ( ! class_exists( 'WRE_Email_Sender' ) ) {
             $sent = wp_mail( $user->user_email, $subject, $body, array( 'Content-Type: text/html; charset=UTF-8' ) );
 
             if ( $sent ) {
-                WRE_Logger::info( sprintf( '[EMAIL] Template "%s" sent successfully to %s', $template, $user->user_email ) );
+                WRE_Logger::log( sprintf( '[EMAIL] Template "%s" sent successfully to %s', $template, $user->user_email ), 'INFO' );
             } else {
-                WRE_Logger::error( sprintf( '[EMAIL] Failed to send template "%s" to %s', $template, $user->user_email ) );
+                WRE_Logger::log( sprintf( '[EMAIL] Failed to send template "%s" to %s', $template, $user->user_email ), 'ERROR' );
             }
 
             return $sent;
