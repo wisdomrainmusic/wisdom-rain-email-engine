@@ -245,7 +245,7 @@ if ( ! class_exists( 'WRE_Cron' ) ) {
                 return;
             }
 
-            $now = current_time( 'timestamp', true );
+            $now = current_time( 'timestamp', false );
 
             foreach ( $users as $user ) {
                 $user_id = self::normalize_user_id( $user );
@@ -320,7 +320,7 @@ if ( ! class_exists( 'WRE_Cron' ) ) {
                 return;
             }
 
-            $now = current_time( 'timestamp', true );
+            $now = current_time( 'timestamp', false );
 
             foreach ( $users as $user ) {
                 if ( ! self::can_queue_more() ) {
@@ -402,7 +402,7 @@ if ( ! class_exists( 'WRE_Cron' ) ) {
                 return;
             }
 
-            $now = current_time( 'timestamp', true );
+            $now = current_time( 'timestamp', false );
 
             foreach ( $users as $user ) {
                 if ( ! self::can_queue_more() ) {
@@ -505,7 +505,7 @@ if ( ! class_exists( 'WRE_Cron' ) ) {
                 return;
             }
 
-            $now = current_time( 'timestamp', true );
+            $now = current_time( 'timestamp', false );
 
             foreach ( $users as $user ) {
                 if ( ! self::can_queue_more() ) {
@@ -592,7 +592,7 @@ if ( ! class_exists( 'WRE_Cron' ) ) {
                 return;
             }
 
-            $now       = current_time( 'timestamp', true );
+            $now       = current_time( 'timestamp', false );
             $threshold = $now - ( self::COMEBACK_DELAY_DAYS * DAY_IN_SECONDS );
 
             foreach ( $users as $user ) {
@@ -676,7 +676,7 @@ if ( ! class_exists( 'WRE_Cron' ) ) {
                 return;
             }
 
-            $now = current_time( 'timestamp', true );
+            $now = current_time( 'timestamp', false );
 
             foreach ( $users as $user ) {
                 if ( ! self::can_queue_more() ) {
@@ -689,15 +689,9 @@ if ( ! class_exists( 'WRE_Cron' ) ) {
                     continue;
                 }
 
-                $registered = false;
+                $registered = self::get_user_registered_timestamp( $user );
 
-                if ( is_object( $user ) && isset( $user->user_registered ) ) {
-                    $registered = strtotime( $user->user_registered . ' UTC' );
-                } elseif ( is_array( $user ) && isset( $user['user_registered'] ) ) {
-                    $registered = strtotime( $user['user_registered'] . ' UTC' );
-                }
-
-                if ( empty( $registered ) ) {
+                if ( false === $registered ) {
                     continue;
                 }
 
@@ -766,7 +760,7 @@ if ( ! class_exists( 'WRE_Cron' ) ) {
                 return;
             }
 
-            $now = current_time( 'timestamp', true );
+            $now = current_time( 'timestamp', false );
 
             foreach ( (array) $users as $user ) {
                 if ( ! self::can_queue_more() ) {
@@ -902,7 +896,7 @@ if ( ! class_exists( 'WRE_Cron' ) ) {
          */
         protected static function queue_plan_reminder_for_users( $users, $days ) {
             $meta_key = self::META_PLAN_REMINDER_PREFIX . absint( $days );
-            $now      = current_time( 'timestamp', true );
+            $now      = current_time( 'timestamp', false );
 
             foreach ( $users as $user ) {
                 if ( ! self::can_queue_more() ) {
@@ -1087,7 +1081,7 @@ if ( ! class_exists( 'WRE_Cron' ) ) {
 
             $data = array(
                 'expiry'    => $expiry,
-                'timestamp' => current_time( 'timestamp', true ),
+                'timestamp' => current_time( 'timestamp', false ),
             );
 
             update_user_meta( $user_id, $meta_key, $data );
@@ -1136,6 +1130,38 @@ if ( ! class_exists( 'WRE_Cron' ) ) {
             }
 
             return 0;
+        }
+
+        /**
+         * Convert a user_registered value to a site-local timestamp.
+         *
+         * @param mixed $user User representation containing the registration date.
+         *
+         * @return int|false Registration timestamp or false when unavailable.
+         */
+        protected static function get_user_registered_timestamp( $user ) {
+            $registered = null;
+
+            if ( is_object( $user ) && isset( $user->user_registered ) ) {
+                $registered = $user->user_registered;
+            } elseif ( is_array( $user ) && isset( $user['user_registered'] ) ) {
+                $registered = $user['user_registered'];
+            }
+
+            if ( empty( $registered ) ) {
+                return false;
+            }
+
+            try {
+                $utc      = new DateTime( $registered, new DateTimeZone( 'UTC' ) );
+                $timezone = function_exists( 'wp_timezone' ) ? wp_timezone() : new DateTimeZone( 'UTC' );
+
+                $utc->setTimezone( $timezone );
+
+                return (int) $utc->getTimestamp();
+            } catch ( Exception $exception ) {
+                return false;
+            }
         }
 
         /**
