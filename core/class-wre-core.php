@@ -27,6 +27,8 @@ if ( ! class_exists( 'WRE_Core' ) ) {
          * @param string $plugin_file Absolute path to the plugin bootstrap file.
          */
         public static function boot( $plugin_file = '' ) {
+            static $booted = false;
+
             if ( ! empty( $plugin_file ) ) {
                 self::$plugin_file = $plugin_file;
             } elseif ( empty( self::$plugin_file ) ) {
@@ -37,10 +39,20 @@ if ( ! class_exists( 'WRE_Core' ) ) {
                 }
             }
 
+            if ( $booted ) {
+                return;
+            }
+
+            $booted = true;
+
             self::define_constants();
             self::register_activation_hook();
 
-            add_action( 'plugins_loaded', array( __CLASS__, 'init' ) );
+            if ( did_action( 'plugins_loaded' ) ) {
+                self::init();
+            } else {
+                add_action( 'plugins_loaded', array( __CLASS__, 'init' ) );
+            }
         }
 
         /**
