@@ -55,6 +55,11 @@ if ( ! class_exists( 'WRE_Cron' ) ) {
         const MAX_QUEUE_PER_RUN = 100;
 
         /**
+         * Number of users to retrieve per paginated query when scanning accounts.
+         */
+        const USER_QUERY_BATCH_SIZE = 200;
+
+        /**
          * WRPA meta key storing the most recent product identifier.
          */
         const META_WRPA_LAST_PRODUCT = 'wrpa_last_product_id';
@@ -146,7 +151,11 @@ if ( ! class_exists( 'WRE_Cron' ) ) {
             }
 
             if ( $next ) {
-                wp_clear_scheduled_hook( self::CRON_HOOK );
+                if ( function_exists( 'wp_unschedule_event' ) ) {
+                    wp_unschedule_event( $next, self::CRON_HOOK );
+                } elseif ( function_exists( 'wp_unschedule_hook' ) ) {
+                    wp_unschedule_hook( self::CRON_HOOK );
+                }
             }
 
             self::install_schedule();
@@ -220,77 +229,74 @@ if ( ! class_exists( 'WRE_Cron' ) ) {
                 \WRE_Logger::increment( 'cron' );
             }
 
-            $query_args = apply_filters(
-                'wre_cron_expiration_query_args',
-                array(
-                    'fields'     => 'ids',
-                    'number'     => -1,
-                    'meta_query' => array(
-                        array(
-                            'key'     => self::META_WRPA_LAST_PRODUCT,
-                            'value'   => $plans,
-                            'compare' => 'IN',
-                        ),
-                        array(
-                            'key'     => self::META_WRPA_SUBSCRIPTION_END,
-                            'compare' => 'EXISTS',
-                        ),
+            $base_query = array(
+                'fields'     => 'ids',
+                'meta_query' => array(
+                    array(
+                        'key'     => self::META_WRPA_LAST_PRODUCT,
+                        'value'   => $plans,
+                        'compare' => 'IN',
                     ),
-                )
+                    array(
+                        'key'     => self::META_WRPA_SUBSCRIPTION_END,
+                        'compare' => 'EXISTS',
+                    ),
+                ),
             );
-
-            $users = get_users( $query_args );
-
-            if ( empty( $users ) ) {
-                return;
-            }
 
             $now = current_time( 'timestamp', true );
 
-            foreach ( $users as $user ) {
-                $user_id = self::normalize_user_id( $user );
+            self::query_users_in_batches(
+                'wre_cron_expiration_query_args',
+                $base_query,
+                static function ( $user ) use ( $plans, $now ) {
+                    $user_id = self::normalize_user_id( $user );
 
-                if ( $user_id <= 0 ) {
-                    continue;
-                }
+                    if ( $user_id <= 0 ) {
+                        return true;
+                    }
 
-                $product_id = absint( get_user_meta( $user_id, self::META_WRPA_LAST_PRODUCT, true ) );
+                    $product_id = absint( get_user_meta( $user_id, self::META_WRPA_LAST_PRODUCT, true ) );
 
-                if ( ! in_array( $product_id, $plans, true ) ) {
-                    continue;
-                }
+                    if ( ! in_array( $product_id, $plans, true ) ) {
+                        return true;
+                    }
 
-                $expires = self::normalize_timestamp( get_user_meta( $user_id, self::META_WRPA_SUBSCRIPTION_END, true ) );
+                    $expires = self::normalize_timestamp( get_user_meta( $user_id, self::META_WRPA_SUBSCRIPTION_END, true ) );
 
-                if ( $expires <= 0 || $expires > $now ) {
-                    continue;
-                }
+                    if ( $expires <= 0 || $expires > $now ) {
+                        return true;
+                    }
 
-                $context = array(
-                    'product_id'       => $product_id,
-                    'subscription_end' => $expires,
-                    'triggered_at'     => $now,
-                    'triggered_by'     => 'wre_cron',
-                );
-
-                /**
-                 * Fires when the WRE cron determines a WRPA subscription has expired.
-                 *
-                 * @param int   $user_id WordPress user identifier.
-                 * @param array $context Supplemental data describing the expiration.
-                 */
-                do_action( 'wrpa_subscription_expired', $user_id, $context );
-
-                if ( class_exists( 'WRE_Logger' ) ) {
-                    $message = sprintf(
-                        '[CRON] Subscription expired for user #%1$d (plan #%2$d).',
-                        $user_id,
-                        $product_id
+                    $context = array(
+                        'product_id'       => $product_id,
+                        'subscription_end' => $expires,
+                        'triggered_at'     => $now,
+                        'triggered_by'     => 'wre_cron',
                     );
 
-                    \WRE_Logger::add( $message, 'cron' );
-                }
-            }
+                    /**
+                     * Fires when the WRE cron determines a WRPA subscription has expired.
+                     *
+                     * @param int   $user_id WordPress user identifier.
+                     * @param array $context Supplemental data describing the expiration.
+                     */
+                    do_action( 'wrpa_subscription_expired', $user_id, $context );
+
+                    if ( class_exists( 'WRE_Logger' ) ) {
+                        $message = sprintf(
+                            '[CRON] Subscription expired for user #%1$d (plan #%2$d).',
+                            $user_id,
+                            $product_id
+                        );
+
+                        \WRE_Logger::add( $message, 'cron' );
+                    }
+
+                    return true;
+                },
+                false
+            );
         }
 
         /**
@@ -305,65 +311,57 @@ if ( ! class_exists( 'WRE_Cron' ) ) {
                 return;
             }
 
-            $query_args = apply_filters(
-                'wre_cron_local_expiration_query_args',
-                array(
-                    'fields'     => 'ids',
-                    'number'     => -1,
-                    'meta_query' => self::get_subscription_expiry_meta_query(),
-                )
+            $base_query = array(
+                'fields'     => 'ids',
+                'meta_query' => self::get_subscription_expiry_meta_query(),
             );
-
-            $users = get_users( $query_args );
-
-            if ( empty( $users ) ) {
-                return;
-            }
 
             $now = current_time( 'timestamp', true );
 
-            foreach ( $users as $user ) {
-                if ( ! self::can_queue_more() ) {
-                    break;
+            self::query_users_in_batches(
+                'wre_cron_local_expiration_query_args',
+                $base_query,
+                static function ( $user ) use ( $now ) {
+                    $user_id = self::normalize_user_id( $user );
+
+                    if ( $user_id <= 0 ) {
+                        return true;
+                    }
+
+                    $expires = self::get_user_subscription_expiry( $user_id );
+
+                    if ( $expires <= 0 || $expires > $now ) {
+                        return true;
+                    }
+
+                    $status = get_user_meta( $user_id, self::META_SUBSCRIPTION_STATUS, true );
+
+                    if ( self::SUBSCRIPTION_STATUS_EXPIRED === $status ) {
+                        return true;
+                    }
+
+                    update_user_meta( $user_id, self::META_SUBSCRIPTION_STATUS, self::SUBSCRIPTION_STATUS_EXPIRED );
+
+                    self::log_cron_scan( sprintf( 'Local subscription expiration detected for user #%d.', $user_id ) );
+
+                    $queued = self::queue_email(
+                        'subscription-expired',
+                        $user_id,
+                        array(
+                            'expired_at' => $expires,
+                            'source'     => 'wre_cron',
+                        )
+                    );
+
+                    if ( $queued ) {
+                        self::log_cron_queue( sprintf( 'Queued subscription-expired email for user #%d.', $user_id ) );
+                    } else {
+                        self::log_cron_queue( sprintf( 'Unable to queue subscription-expired email for user #%d; limit reached.', $user_id ) );
+                    }
+
+                    return self::can_queue_more();
                 }
-
-                $user_id = self::normalize_user_id( $user );
-
-                if ( $user_id <= 0 ) {
-                    continue;
-                }
-
-                $expires = self::get_user_subscription_expiry( $user_id );
-
-                if ( $expires <= 0 || $expires > $now ) {
-                    continue;
-                }
-
-                $status = get_user_meta( $user_id, self::META_SUBSCRIPTION_STATUS, true );
-
-                if ( self::SUBSCRIPTION_STATUS_EXPIRED === $status ) {
-                    continue;
-                }
-
-                update_user_meta( $user_id, self::META_SUBSCRIPTION_STATUS, self::SUBSCRIPTION_STATUS_EXPIRED );
-
-                self::log_cron_scan( sprintf( 'Local subscription expiration detected for user #%d.', $user_id ) );
-
-                $queued = self::queue_email(
-                    'subscription-expired',
-                    $user_id,
-                    array(
-                        'expired_at' => $expires,
-                        'source'     => 'wre_cron',
-                    )
-                );
-
-                if ( $queued ) {
-                    self::log_cron_queue( sprintf( 'Queued subscription-expired email for user #%d.', $user_id ) );
-                } else {
-                    self::log_cron_queue( sprintf( 'Unable to queue subscription-expired email for user #%d; limit reached.', $user_id ) );
-                }
-            }
+            );
         }
 
         /**
@@ -387,64 +385,56 @@ if ( ! class_exists( 'WRE_Cron' ) ) {
                 self::get_subscription_expiry_meta_query(),
             );
 
-            $query_args = apply_filters(
-                'wre_cron_trial_expired_query_args',
-                array(
-                    'fields'     => 'ids',
-                    'number'     => -1,
-                    'meta_query' => $meta_query,
-                )
+            $base_query = array(
+                'fields'     => 'ids',
+                'meta_query' => $meta_query,
             );
-
-            $users = get_users( $query_args );
-
-            if ( empty( $users ) ) {
-                return;
-            }
 
             $now = current_time( 'timestamp', true );
 
-            foreach ( $users as $user ) {
-                if ( ! self::can_queue_more() ) {
-                    break;
+            self::query_users_in_batches(
+                'wre_cron_trial_expired_query_args',
+                $base_query,
+                static function ( $user ) use ( $now ) {
+                    $user_id = self::normalize_user_id( $user );
+
+                    if ( $user_id <= 0 ) {
+                        return true;
+                    }
+
+                    $expires = self::get_user_subscription_expiry( $user_id );
+
+                    if ( $expires <= 0 || $expires > $now ) {
+                        return true;
+                    }
+
+                    if ( self::guard_matches_expiry( get_user_meta( $user_id, self::META_SENT_TRIAL_EXPIRED, true ), $expires ) ) {
+                        return true;
+                    }
+
+                    update_user_meta( $user_id, self::META_SUBSCRIPTION_STATUS, self::SUBSCRIPTION_STATUS_EXPIRED );
+
+                    self::log_cron_scan( sprintf( 'Trial subscription expired for user #%d.', $user_id ) );
+
+                    $queued = self::queue_email(
+                        'trial-expired',
+                        $user_id,
+                        array(
+                            'expired_at' => $expires,
+                            'source'     => 'wre_cron',
+                        )
+                    );
+
+                    if ( $queued ) {
+                        self::mark_guard_for_expiry( $user_id, self::META_SENT_TRIAL_EXPIRED, $expires );
+                        self::log_cron_queue( sprintf( 'Queued trial-expired email for user #%d.', $user_id ) );
+                    } else {
+                        self::log_cron_queue( sprintf( 'Unable to queue trial-expired email for user #%d; limit reached.', $user_id ) );
+                    }
+
+                    return self::can_queue_more();
                 }
-
-                $user_id = self::normalize_user_id( $user );
-
-                if ( $user_id <= 0 ) {
-                    continue;
-                }
-
-                $expires = self::get_user_subscription_expiry( $user_id );
-
-                if ( $expires <= 0 || $expires > $now ) {
-                    continue;
-                }
-
-                if ( self::guard_matches_expiry( get_user_meta( $user_id, self::META_SENT_TRIAL_EXPIRED, true ), $expires ) ) {
-                    continue;
-                }
-
-                update_user_meta( $user_id, self::META_SUBSCRIPTION_STATUS, self::SUBSCRIPTION_STATUS_EXPIRED );
-
-                self::log_cron_scan( sprintf( 'Trial subscription expired for user #%d.', $user_id ) );
-
-                $queued = self::queue_email(
-                    'trial-expired',
-                    $user_id,
-                    array(
-                        'expired_at' => $expires,
-                        'source'     => 'wre_cron',
-                    )
-                );
-
-                if ( $queued ) {
-                    self::mark_guard_for_expiry( $user_id, self::META_SENT_TRIAL_EXPIRED, $expires );
-                    self::log_cron_queue( sprintf( 'Queued trial-expired email for user #%d.', $user_id ) );
-                } else {
-                    self::log_cron_queue( sprintf( 'Unable to queue trial-expired email for user #%d; limit reached.', $user_id ) );
-                }
-            }
+            );
         }
 
         /**
@@ -490,70 +480,62 @@ if ( ! class_exists( 'WRE_Cron' ) ) {
                 self::get_subscription_expiry_meta_query(),
             );
 
-            $query_args = apply_filters(
-                'wre_cron_renewal_reminder_query_args',
-                array(
-                    'fields'     => 'ids',
-                    'number'     => -1,
-                    'meta_query' => $meta_query,
-                )
+            $base_query = array(
+                'fields'     => 'ids',
+                'meta_query' => $meta_query,
             );
-
-            $users = get_users( $query_args );
-
-            if ( empty( $users ) ) {
-                return;
-            }
 
             $now = current_time( 'timestamp', true );
 
-            foreach ( $users as $user ) {
-                if ( ! self::can_queue_more() ) {
-                    break;
+            self::query_users_in_batches(
+                'wre_cron_renewal_reminder_query_args',
+                $base_query,
+                static function ( $user ) use ( $now ) {
+                    $user_id = self::normalize_user_id( $user );
+
+                    if ( $user_id <= 0 ) {
+                        return true;
+                    }
+
+                    $expires = self::get_user_subscription_expiry( $user_id );
+
+                    if ( $expires <= $now ) {
+                        return true;
+                    }
+
+                    $seconds_remaining = $expires - $now;
+                    $days_remaining    = (int) ceil( $seconds_remaining / DAY_IN_SECONDS );
+
+                    if ( $days_remaining <= 0 || $days_remaining > self::RENEWAL_REMINDER_DAYS ) {
+                        return true;
+                    }
+
+                    if ( self::guard_matches_expiry( get_user_meta( $user_id, self::META_SENT_PLAN_REMINDER, true ), $expires ) ) {
+                        return true;
+                    }
+
+                    self::log_cron_scan( sprintf( 'Renewal reminder due for user #%1$d (%2$d day(s) remaining).', $user_id, $days_remaining ) );
+
+                    $queued = self::queue_email(
+                        'plan-reminder',
+                        $user_id,
+                        array(
+                            'days_remaining' => max( 1, $days_remaining ),
+                            'expires_at'     => $expires,
+                            'source'         => 'wre_cron',
+                        )
+                    );
+
+                    if ( $queued ) {
+                        self::mark_guard_for_expiry( $user_id, self::META_SENT_PLAN_REMINDER, $expires );
+                        self::log_cron_queue( sprintf( 'Queued plan-reminder email for user #%d.', $user_id ) );
+                    } else {
+                        self::log_cron_queue( sprintf( 'Unable to queue plan-reminder email for user #%d; limit reached.', $user_id ) );
+                    }
+
+                    return self::can_queue_more();
                 }
-
-                $user_id = self::normalize_user_id( $user );
-
-                if ( $user_id <= 0 ) {
-                    continue;
-                }
-
-                $expires = self::get_user_subscription_expiry( $user_id );
-
-                if ( $expires <= $now ) {
-                    continue;
-                }
-
-                $seconds_remaining = $expires - $now;
-                $days_remaining    = (int) ceil( $seconds_remaining / DAY_IN_SECONDS );
-
-                if ( $days_remaining <= 0 || $days_remaining > self::RENEWAL_REMINDER_DAYS ) {
-                    continue;
-                }
-
-                if ( self::guard_matches_expiry( get_user_meta( $user_id, self::META_SENT_PLAN_REMINDER, true ), $expires ) ) {
-                    continue;
-                }
-
-                self::log_cron_scan( sprintf( 'Renewal reminder due for user #%1$d (%2$d day(s) remaining).', $user_id, $days_remaining ) );
-
-                $queued = self::queue_email(
-                    'plan-reminder',
-                    $user_id,
-                    array(
-                        'days_remaining' => max( 1, $days_remaining ),
-                        'expires_at'     => $expires,
-                        'source'         => 'wre_cron',
-                    )
-                );
-
-                if ( $queued ) {
-                    self::mark_guard_for_expiry( $user_id, self::META_SENT_PLAN_REMINDER, $expires );
-                    self::log_cron_queue( sprintf( 'Queued plan-reminder email for user #%d.', $user_id ) );
-                } else {
-                    self::log_cron_queue( sprintf( 'Unable to queue plan-reminder email for user #%d; limit reached.', $user_id ) );
-                }
-            }
+            );
         }
 
         /**
@@ -577,66 +559,58 @@ if ( ! class_exists( 'WRE_Cron' ) ) {
                 self::get_subscription_expiry_meta_query(),
             );
 
-            $query_args = apply_filters(
-                'wre_cron_comeback_query_args',
-                array(
-                    'fields'     => 'ids',
-                    'number'     => -1,
-                    'meta_query' => $meta_query,
-                )
+            $base_query = array(
+                'fields'     => 'ids',
+                'meta_query' => $meta_query,
             );
-
-            $users = get_users( $query_args );
-
-            if ( empty( $users ) ) {
-                return;
-            }
 
             $now       = current_time( 'timestamp', true );
             $threshold = $now - ( self::COMEBACK_DELAY_DAYS * DAY_IN_SECONDS );
 
-            foreach ( $users as $user ) {
-                if ( ! self::can_queue_more() ) {
-                    break;
+            self::query_users_in_batches(
+                'wre_cron_comeback_query_args',
+                $base_query,
+                static function ( $user ) use ( $now, $threshold ) {
+                    $user_id = self::normalize_user_id( $user );
+
+                    if ( $user_id <= 0 ) {
+                        return true;
+                    }
+
+                    $expires = self::get_user_subscription_expiry( $user_id );
+
+                    if ( $expires <= 0 || $expires > $threshold ) {
+                        return true;
+                    }
+
+                    if ( self::guard_matches_expiry( get_user_meta( $user_id, self::META_SENT_COMEBACK_30D, true ), $expires ) ) {
+                        return true;
+                    }
+
+                    $days_since_expiry = (int) max( self::COMEBACK_DELAY_DAYS, floor( ( $now - $expires ) / DAY_IN_SECONDS ) );
+
+                    self::log_cron_scan( sprintf( 'Comeback campaign triggered for user #%1$d (%2$d days since expiry).', $user_id, $days_since_expiry ) );
+
+                    $queued = self::queue_email(
+                        'comeback',
+                        $user_id,
+                        array(
+                            'days_since_expiry' => $days_since_expiry,
+                            'expired_at'        => $expires,
+                            'source'            => 'wre_cron',
+                        )
+                    );
+
+                    if ( $queued ) {
+                        self::mark_guard_for_expiry( $user_id, self::META_SENT_COMEBACK_30D, $expires );
+                        self::log_cron_queue( sprintf( 'Queued comeback email for user #%d.', $user_id ) );
+                    } else {
+                        self::log_cron_queue( sprintf( 'Unable to queue comeback email for user #%d; limit reached.', $user_id ) );
+                    }
+
+                    return self::can_queue_more();
                 }
-
-                $user_id = self::normalize_user_id( $user );
-
-                if ( $user_id <= 0 ) {
-                    continue;
-                }
-
-                $expires = self::get_user_subscription_expiry( $user_id );
-
-                if ( $expires <= 0 || $expires > $threshold ) {
-                    continue;
-                }
-
-                if ( self::guard_matches_expiry( get_user_meta( $user_id, self::META_SENT_COMEBACK_30D, true ), $expires ) ) {
-                    continue;
-                }
-
-                $days_since_expiry = (int) max( self::COMEBACK_DELAY_DAYS, floor( ( $now - $expires ) / DAY_IN_SECONDS ) );
-
-                self::log_cron_scan( sprintf( 'Comeback campaign triggered for user #%1$d (%2$d days since expiry).', $user_id, $days_since_expiry ) );
-
-                $queued = self::queue_email(
-                    'comeback',
-                    $user_id,
-                    array(
-                        'days_since_expiry' => $days_since_expiry,
-                        'expired_at'        => $expires,
-                        'source'            => 'wre_cron',
-                    )
-                );
-
-                if ( $queued ) {
-                    self::mark_guard_for_expiry( $user_id, self::META_SENT_COMEBACK_30D, $expires );
-                    self::log_cron_queue( sprintf( 'Queued comeback email for user #%d.', $user_id ) );
-                } else {
-                    self::log_cron_queue( sprintf( 'Unable to queue comeback email for user #%d; limit reached.', $user_id ) );
-                }
-            }
+            );
         }
 
         /**
@@ -892,6 +866,87 @@ if ( ! class_exists( 'WRE_Cron' ) ) {
             self::$queued_during_run++;
 
             return true;
+        }
+
+        /**
+         * Return the batch size used when paginating user queries.
+         *
+         * @return int
+         */
+        protected static function get_user_query_batch_size() {
+            $size = apply_filters( 'wre_cron_user_query_batch_size', self::USER_QUERY_BATCH_SIZE );
+            $size = absint( $size );
+
+            if ( $size <= 0 ) {
+                return self::USER_QUERY_BATCH_SIZE;
+            }
+
+            return $size;
+        }
+
+        /**
+         * Execute a user query in paginated batches and process each result.
+         *
+         * @param string   $filter_name         Filter applied to the query arguments.
+         * @param array    $query_args          Base query arguments.
+         * @param callable $callback            Callback invoked for each user.
+         * @param bool     $respect_queue_limit Whether processing should halt when the queue limit is reached.
+         */
+        protected static function query_users_in_batches( $filter_name, array $query_args, callable $callback, $respect_queue_limit = true ) {
+            $batch_size = self::get_user_query_batch_size();
+            $page       = 1;
+
+            while ( true ) {
+                if ( $respect_queue_limit && ! self::can_queue_more() ) {
+                    break;
+                }
+
+                $paged_args = array_merge(
+                    $query_args,
+                    array(
+                        'number' => $batch_size,
+                        'paged'  => $page,
+                    )
+                );
+
+                if ( is_string( $filter_name ) && '' !== $filter_name ) {
+                    $paged_args = apply_filters( $filter_name, $paged_args );
+                }
+
+                $query_batch_size = isset( $paged_args['number'] ) ? max( 1, absint( $paged_args['number'] ) ) : $batch_size;
+
+                $users = get_users( $paged_args );
+
+                if ( empty( $users ) ) {
+                    break;
+                }
+
+                $halt_processing = false;
+
+                foreach ( $users as $user ) {
+                    if ( $respect_queue_limit && ! self::can_queue_more() ) {
+                        $halt_processing = true;
+                        break;
+                    }
+
+                    $result = call_user_func( $callback, $user );
+
+                    if ( false === $result ) {
+                        $halt_processing = true;
+                        break;
+                    }
+                }
+
+                if ( $halt_processing ) {
+                    break;
+                }
+
+                if ( count( $users ) < $query_batch_size ) {
+                    break;
+                }
+
+                $page++;
+            }
         }
 
         /**
