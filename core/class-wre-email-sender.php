@@ -1025,9 +1025,24 @@ if ( ! class_exists( 'WRE_Email_Sender' ) ) {
             }
 
             // Template path
-            $template_path = trailingslashit( dirname( dirname( __FILE__ ) ) ) . 'templates/emails/' . $template . '.php';
-            if ( ! file_exists( $template_path ) ) {
-                WRE_Logger::log( sprintf( '[EMAIL] Template file missing: %s', $template_path ), 'ERROR' );
+            $templates_dir  = trailingslashit( dirname( dirname( __FILE__ ) ) ) . 'templates/emails/';
+            $possible_files = array(
+                $templates_dir . $template . '.php',
+                $templates_dir . 'email-' . $template . '.php',
+                $templates_dir . 'email-' . $template . '.html.php',
+            );
+
+            $template_path = '';
+
+            foreach ( $possible_files as $file ) {
+                if ( file_exists( $file ) ) {
+                    $template_path = $file;
+                    break;
+                }
+            }
+
+            if ( '' === $template_path ) {
+                WRE_Logger::log( sprintf( '[EMAIL] Template file missing: %s', $possible_files[2] ), 'ERROR' );
                 return false;
             }
 
