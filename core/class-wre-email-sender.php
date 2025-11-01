@@ -1025,7 +1025,7 @@ if ( ! class_exists( 'WRE_Email_Sender' ) ) {
             }
 
             // Template path
-            $template_path = WRE_PLUGIN_DIR . 'templates/emails/' . $template . '.php';
+            $template_path = trailingslashit( dirname( dirname( __FILE__ ) ) ) . 'templates/emails/' . $template . '.php';
             if ( ! file_exists( $template_path ) ) {
                 WRE_Logger::error( sprintf( '[EMAIL] Template file missing: %s', $template_path ) );
                 return false;
