@@ -120,6 +120,31 @@ if ( ! class_exists( 'WRE_Cron' ) ) {
         protected static $plan_reminder_days = array( 3, 1 );
 
         /**
+         * Retrieve the DateTimeZone configured for the WordPress site.
+         *
+         * @return DateTimeZone
+         */
+        protected static function get_site_timezone() {
+            if ( function_exists( 'wp_timezone' ) ) {
+                return wp_timezone();
+            }
+
+            if ( function_exists( 'wp_timezone_string' ) ) {
+                $timezone_string = wp_timezone_string();
+
+                if ( $timezone_string ) {
+                    try {
+                        return new DateTimeZone( $timezone_string );
+                    } catch ( Exception $exception ) {
+                        // Ignore invalid timezone strings and fall back to UTC.
+                    }
+                }
+            }
+
+            return new DateTimeZone( 'UTC' );
+        }
+
+        /**
          * Tracks the number of jobs queued during the current cron execution.
          *
          * @var int
@@ -833,7 +858,7 @@ if ( ! class_exists( 'WRE_Cron' ) ) {
          * @return int Timestamp for the next run or 0 on failure.
          */
         protected static function get_next_runtime() {
-            $timezone = function_exists( 'wp_timezone' ) ? wp_timezone() : new DateTimeZone( 'UTC' );
+            $timezone = self::get_site_timezone();
 
             try {
                 $now = new DateTime( 'now', $timezone );
@@ -1154,7 +1179,7 @@ if ( ! class_exists( 'WRE_Cron' ) ) {
 
             try {
                 $utc      = new DateTime( $registered, new DateTimeZone( 'UTC' ) );
-                $timezone = function_exists( 'wp_timezone' ) ? wp_timezone() : new DateTimeZone( 'UTC' );
+                $timezone = self::get_site_timezone();
 
                 $utc->setTimezone( $timezone );
 
@@ -1229,7 +1254,7 @@ if ( ! class_exists( 'WRE_Cron' ) ) {
                     return $numeric > 0 ? $numeric : 0;
                 }
 
-                $timezone = function_exists( 'wp_timezone' ) ? wp_timezone() : new DateTimeZone( 'UTC' );
+                $timezone = self::get_site_timezone();
                 $formats  = array( 'Y-m-d H:i:s', 'Y-m-d' );
 
                 foreach ( $formats as $format ) {
@@ -1248,10 +1273,16 @@ if ( ! class_exists( 'WRE_Cron' ) ) {
                     return max( 0, (int) $date->getTimestamp() );
                 }
 
-                $timestamp = strtotime( $value );
+                try {
+                    $parsed = new DateTime( $value, $timezone );
 
-                if ( false !== $timestamp ) {
-                    return (int) $timestamp;
+                    return max( 0, (int) $parsed->getTimestamp() );
+                } catch ( Exception $exception ) {
+                    $timestamp = strtotime( $value );
+
+                    if ( false !== $timestamp ) {
+                        return (int) $timestamp;
+                    }
                 }
             }
 
@@ -1282,12 +1313,15 @@ if ( ! class_exists( 'WRE_Cron' ) ) {
             }
 
             $allowed_hours = array( 1, 13 );
-            $timezone      = function_exists( 'wp_timezone' ) ? wp_timezone() : new DateTimeZone( 'UTC' );
+            $timezone      = self::get_site_timezone();
 
             try {
-                $date = new DateTime( '@' . $timestamp );
-                $date->setTimezone( $timezone );
+                $date = DateTime::createFromFormat( 'U', (string) $timestamp, $timezone );
             } catch ( Exception $exception ) {
+                return false;
+            }
+
+            if ( false === $date ) {
                 return false;
             }
 
