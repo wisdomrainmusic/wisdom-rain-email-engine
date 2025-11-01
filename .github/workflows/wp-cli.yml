@@ -1,0 +1,31 @@
+name: WP-CLI validation
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - feature/**
+
+jobs:
+  wp-cli:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          coverage: none
+
+      - name: Install WP-CLI
+        run: |
+          curl -O https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
+          php wp-cli.phar --info
+
+      - name: Run cron tasks via WP-CLI
+        run: |
+          php wp-cli.phar eval "do_action('wre_cron_run_tasks');"
+          php wp-cli.phar eval "WRE_Cron::run_tasks();"
+          php wp-cli.phar option get _wre_log_entries | tail -n 40
