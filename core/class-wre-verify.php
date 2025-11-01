@@ -49,11 +49,6 @@ if ( ! class_exists( 'WRE_Verify' ) ) {
                 return false;
             }
 
-            // Force instant mode for verification emails
-            if ( empty( $mode ) || $mode === 'auto' ) {
-                $mode = 'instant';
-            }
-
             $mode = in_array( $mode, array( 'instant', 'queue', 'auto' ), true ) ? $mode : 'auto';
             $dispatched = false;
 
@@ -99,23 +94,11 @@ if ( ! class_exists( 'WRE_Verify' ) ) {
                 return;
             }
 
-            $user_id = absint( filter_input( INPUT_GET, 'user', FILTER_SANITIZE_NUMBER_INT ) );
-            $token   = isset( $_GET['token'] ) ? sanitize_text_field( wp_unslash( $_GET['token'] ) ) : '';
+            $user_id   = absint( filter_input( INPUT_GET, 'user', FILTER_SANITIZE_NUMBER_INT ) );
+            $token_raw = filter_input( INPUT_GET, 'token', FILTER_SANITIZE_FULL_SPECIAL_CHARS );
+            $token     = is_string( $token_raw ) ? sanitize_text_field( $token_raw ) : '';
 
-            if ( empty( $token ) && isset( $_REQUEST['token'] ) ) {
-                $token = sanitize_text_field( wp_unslash( $_REQUEST['token'] ) );
-            }
-
-            if ( empty( $token ) ) {
-                if ( class_exists( 'WRE_Logger' ) ) {
-                    \WRE_Logger::log( '[VERIFY] Missing verification token in request.', 'VERIFY' );
-                }
-
-                echo 'Invalid or expired token.';
-                return;
-            }
-
-            if ( $user_id <= 0 ) {
+            if ( $user_id <= 0 || '' === $token ) {
                 self::render_error();
             }
 
@@ -138,10 +121,6 @@ if ( ! class_exists( 'WRE_Verify' ) ) {
 
             if ( '' === $saved_token || ! hash_equals( $saved_token, $token ) || ! self::is_token_fresh( $generated ) ) {
                 self::render_error();
-            }
-
-            if ( class_exists( 'WRE_Logger' ) ) {
-                \WRE_Logger::log( sprintf( '[VERIFY] Token validated successfully for user #%d', $user_id ), 'VERIFY' );
             }
 
             self::mark_user_verified( $user_id );

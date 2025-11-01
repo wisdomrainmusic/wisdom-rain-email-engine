@@ -26,33 +26,13 @@ if ( ! class_exists( 'WRE_Core' ) ) {
          *
          * @param string $plugin_file Absolute path to the plugin bootstrap file.
          */
-        public static function boot( $plugin_file = '' ) {
-            static $booted = false;
-
-            if ( ! empty( $plugin_file ) ) {
-                self::$plugin_file = $plugin_file;
-            } elseif ( empty( self::$plugin_file ) ) {
-                $candidate = dirname( __DIR__ ) . '/wisdom-rain-email-engine.php';
-
-                if ( file_exists( $candidate ) ) {
-                    self::$plugin_file = $candidate;
-                }
-            }
-
-            if ( $booted ) {
-                return;
-            }
-
-            $booted = true;
+        public static function boot( $plugin_file ) {
+            self::$plugin_file = $plugin_file;
 
             self::define_constants();
             self::register_activation_hook();
 
-            if ( did_action( 'plugins_loaded' ) ) {
-                self::init();
-            } else {
-                add_action( 'plugins_loaded', array( __CLASS__, 'init' ) );
-            }
+            add_action( 'plugins_loaded', array( __CLASS__, 'init' ) );
         }
 
         /**
