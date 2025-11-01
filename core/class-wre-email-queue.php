@@ -16,12 +16,19 @@ if ( ! class_exists( 'WRE_Email_Queue' ) ) {
         }
 
         public static function queue_email( $user_id, $template, $context = array() ) {
-            $queue   = get_option( self::OPTION, array() );
+            $queue    = get_option( self::OPTION, array() );
+            $user_id  = intval( $user_id );
+            $template = sanitize_key( $template );
+            $context  = is_array( $context ) ? $context : array();
+
             $queue[] = array(
-                'uid' => intval( $user_id ),
-                'tpl' => $template,
-                'ctx' => $context,
-                'ts'  => current_time( 'timestamp', false ),
+                'user_id' => $user_id,
+                'type'    => $template,
+                'vars'    => $context,
+                'uid'     => $user_id,
+                'tpl'     => $template,
+                'ctx'     => $context,
+                'ts'      => current_time( 'timestamp', false ),
             );
 
             update_option( self::OPTION, $queue, false );
@@ -36,20 +43,84 @@ if ( ! class_exists( 'WRE_Email_Queue' ) ) {
                 return;
             }
 
-            $next = array_shift( $queue );
+            $job = array_shift( $queue );
 
             update_option( self::OPTION, $queue, false );
 
+            if ( ! is_array( $job ) ) {
+                if ( class_exists( 'WRE_Logger' ) ) {
+                    WRE_Logger::log( '[QUEUE] Encountered invalid job payload; expected array.', 'ERROR' );
+                }
+
+                return;
+            }
+
+            $user_id = isset( $job['user_id'] ) ? intval( $job['user_id'] ) : 0;
+
+            if ( ! $user_id && isset( $job['uid'] ) ) {
+                $user_id = intval( $job['uid'] );
+            }
+
+            if ( ! $user_id ) {
+                if ( class_exists( 'WRE_Logger' ) ) {
+                    WRE_Logger::log( '[QUEUE] Missing user_id in job payload: ' . wp_json_encode( $job ), 'ERROR' );
+                }
+
+                return;
+            }
+
+            $template = '';
+
+            if ( isset( $job['type'] ) ) {
+                $template = sanitize_key( $job['type'] );
+            } elseif ( isset( $job['tpl'] ) ) {
+                $template = sanitize_key( $job['tpl'] );
+            }
+
+            if ( '' === $template ) {
+                if ( class_exists( 'WRE_Logger' ) ) {
+                    WRE_Logger::log( sprintf( '[QUEUE] Missing template for user #%d job.', $user_id ), 'ERROR' );
+                }
+
+                return;
+            }
+
+            $context = array();
+
+            if ( isset( $job['vars'] ) && is_array( $job['vars'] ) ) {
+                $context = $job['vars'];
+            } elseif ( isset( $job['ctx'] ) && is_array( $job['ctx'] ) ) {
+                $context = $job['ctx'];
+            }
+
+            $user = get_userdata( $user_id );
+
+            if ( ! $user || empty( $user->user_email ) ) {
+                if ( class_exists( 'WRE_Logger' ) ) {
+                    WRE_Logger::log( sprintf( '[QUEUE] Invalid user #%d for template "%s".', $user_id, $template ), 'ERROR' );
+                }
+
+                return;
+            }
+
             if ( class_exists( 'WRE_Logger' ) ) {
-                WRE_Logger::add( sprintf( "[QUEUE] Sending '%s' to user #%d", $next['tpl'], $next['uid'] ), 'queue' );
+                WRE_Logger::log(
+                    sprintf(
+                        '[QUEUE] Preparing to send "%s" to user #%d (%s).',
+                        $template,
+                        $user_id,
+                        $user->user_email
+                    ),
+                    'INFO'
+                );
             }
 
             if ( class_exists( 'WRE_Email_Sender' ) ) {
-                WRE_Email_Sender::send_template_email( $next['uid'], $next['tpl'], $next['ctx'] );
+                WRE_Email_Sender::send_template_email( $user_id, $template, $context );
             }
 
             if ( class_exists( 'WRE_Logger' ) ) {
-                WRE_Logger::add( '[QUEUE] Email dispatched', 'queue' );
+                WRE_Logger::log( '[QUEUE] Email dispatched.', 'INFO' );
             }
 
             if ( ! empty( $queue ) ) {
