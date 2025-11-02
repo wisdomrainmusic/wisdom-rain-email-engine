@@ -86,10 +86,6 @@ if ( ! class_exists( 'WRE_Core' ) ) {
                 require_once $cron_file;
             }
 
-            if ( class_exists( 'WRE_Cron' ) ) {
-                \WRE_Cron::install_schedule();
-            }
-
         }
 
         /**
