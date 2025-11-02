@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8" />
+    <title>{{subject}}</title>
+    <style>
+        body { background-color: #f6f3ff; color: #2a1f45; font-family: 'Helvetica Neue', Arial, sans-serif; margin: 0; padding: 0; }
+        .wrapper { max-width: 640px; margin: 0 auto; padding: 32px 24px; }
+        .card { background: linear-gradient(135deg, #ffffff 0%, #f7f1ff 100%); border-radius: 18px; padding: 36px; box-shadow: 0 10px 36px rgba(88, 63, 152, 0.18); }
+        h1 { font-size: 28px; margin: 0 0 16px; color: #5530b2; }
+        p { line-height: 1.6; font-size: 16px; margin: 0 0 16px; }
+        .cta { display: inline-block; padding: 14px 28px; background: #6f42c1; color: #ffffff !important; text-decoration: none; border-radius: 8px; font-weight: 600; }
+        .footer { margin-top: 24px; font-size: 14px; color: #6d5a8c; }
+    </style>
+</head>
+<body>
+    <div class="wrapper">
+        <div class="card">
+            <h1>{{headline}}</h1>
+            <p>{{seasonal_message}}</p>
+            <p>{{campaign_offer}}</p>
+            <p>{{recipient_name}}, thank you for journeying with {{site_name}}.</p>
+            <p>
+                <a href="{{cta_url}}" class="cta">{{cta_text}}</a>
+            </p>
+            <p class="footer">
+                {{site_name}} · {{site_url}} · {{support_email}}<br />
+                Prefer fewer emails? <a href="{{unsubscribe_url}}" style="color:#5530b2;">Unsubscribe</a>
+            </p>
+        </div>
+    </div>
+</body>
+</html>
