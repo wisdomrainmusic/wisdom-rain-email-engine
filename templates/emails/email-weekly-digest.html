@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>{{digest_title}}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+</head>
+<body style="margin:0; padding:40px; background-color:#f5f5f5; font-family:'Helvetica Neue', Arial, sans-serif; color:#1a1a1a;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:680px; margin:0 auto; background-color:#ffffff; border-radius:12px; overflow:hidden;">
+        <tr>
+            <td style="padding:32px;">
+                <h1 style="font-size:28px; margin:0 0 16px; color:#111827;">{{digest_title}}</h1>
+                <p style="font-size:16px; line-height:1.7; margin:0 0 24px;">{{digest_intro}}</p>
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="font-size:15px; line-height:1.6; margin:0 0 28px;">
+                    <tr>
+                        <td style="width:30%; color:#6b7280; padding:8px 12px 8px 0;">New teachings</td>
+                        <td style="padding:8px 0;">{{digest_new_teachings}}</td>
+                    </tr>
+                    <tr>
+                        <td style="width:30%; color:#6b7280; padding:8px 12px 8px 0;">Community highlights</td>
+                        <td style="padding:8px 0;">{{digest_community_highlights}}</td>
+                    </tr>
+                    <tr>
+                        <td style="width:30%; color:#6b7280; padding:8px 12px 8px 0;">Upcoming moments</td>
+                        <td style="padding:8px 0;">{{digest_upcoming_events}}</td>
+                    </tr>
+                </table>
+                <p style="font-size:16px; line-height:1.7; margin:0 0 24px;">Take your next aligned step:<br /><a href="{{digest_cta_url}}" style="color:#C1252D; font-weight:600;">{{digest_cta_text}}</a></p>
+                <p style="font-size:14px; line-height:1.6; color:#6b7280; margin:0;">Until next time,<br />{{sender_signature}}</p>
+            </td>
+        </tr>
+    </table>
+    <p style="text-align:center; font-size:12px; color:#9ca3af; margin:24px 0 0;">Sent with care from {{site_name}}. Prefer fewer emails? <a href="{{unsubscribe_url}}" style="color:#0c4a6e; text-decoration:none;">Unsubscribe</a>.</p>
+</body>
+</html>

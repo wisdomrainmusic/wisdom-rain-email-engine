@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8" />
+    <title>{{subject}}</title>
+    <style>
+        body { background-color: #f1fbf5; color: #1f3a2b; font-family: 'Helvetica Neue', Arial, sans-serif; margin: 0; padding: 0; }
+        .wrapper { max-width: 640px; margin: 0 auto; padding: 32px 24px; }
+        .card { background: #ffffff; border-radius: 14px; padding: 32px; box-shadow: 0 8px 28px rgba(24, 94, 62, 0.12); }
+        h1 { font-size: 28px; margin: 0 0 16px; color: #1f7a50; }
+        p { line-height: 1.6; font-size: 16px; margin: 0 0 16px; }
+        .cta { display: inline-block; padding: 14px 28px; background: #29a36a; color: #ffffff !important; text-decoration: none; border-radius: 8px; font-weight: 600; }
+        .footer { margin-top: 24px; font-size: 14px; color: #54705f; }
+    </style>
+</head>
+<body>
+    <div class="wrapper">
+        <div class="card">
+            <h1>{{headline}}</h1>
+            <p>{{seasonal_message}}</p>
+            <p>{{campaign_offer}}</p>
+            <p>{{site_name}} is ready to breathe into summer with you, {{recipient_name}}.</p>
+            <p>
+                <a href="{{cta_url}}" class="cta">{{cta_text}}</a>
+            </p>
+            <p class="footer">
+                {{site_name}} · {{site_url}} · {{support_email}}<br />
+                Prefer fewer emails? <a href="{{unsubscribe_url}}" style="color:#29a36a;">Unsubscribe</a>
+            </p>
+        </div>
+    </div>
+</body>
+</html>
