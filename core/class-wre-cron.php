@@ -12,24 +12,55 @@ if ( ! class_exists( 'WRE_Cron' ) ) {
 		const META_SENT_PLAN_REMINDER        = '_wre_sent_plan_reminder';
 		const META_SENT_COMEBACK             = '_wre_sent_comeback_30d';
 
-		public static function init() {
-			add_filter(
-				'cron_schedules',
-				function( $schedules ) {
-					$schedules['wre_five_minutes'] = array(
-						'interval' => 300,
-						'display'  => __( 'Every 5 Minutes', 'wisdom-rain-email-engine' ),
-					);
+                public static function init() {
+                        add_filter(
+                                'cron_schedules',
+                                function( $schedules ) {
+                                        $schedules['wre_five_minutes'] = array(
+                                                'interval' => 300,
+                                                'display'  => __( 'Every 5 Minutes', 'wisdom-rain-email-engine' ),
+                                        );
+                                        $schedules['wre_four_hours']   = array(
+                                                'interval' => 4 * HOUR_IN_SECONDS,
+                                                'display'  => __( 'Every 4 Hours', 'wisdom-rain-email-engine' ),
+                                        );
 
-					return $schedules;
-				}
-			);
-			add_action( 'wre_cron_run_tasks', array( __CLASS__, 'run_tasks' ) );
+                                        return $schedules;
+                                }
+                        );
+                        add_action( 'wre_cron_run_tasks', array( __CLASS__, 'run_tasks' ) );
 
-			if ( ! wp_next_scheduled( 'wre_cron_run_tasks' ) ) {
-				wp_schedule_event( time(), 'wre_five_minutes', 'wre_cron_run_tasks' );
-			}
-		}
+                        $cleared = false;
+
+                        while ( false !== ( $timestamp = wp_next_scheduled( 'wre_cron_run_tasks' ) ) ) {
+                                wp_unschedule_event( $timestamp, 'wre_cron_run_tasks' );
+                                $cleared = true;
+                        }
+
+                        if ( $cleared ) {
+                                if ( class_exists( 'WRE_Logger' ) ) {
+                                        \WRE_Logger::add( '[CRON] Cleared previously scheduled wre_cron_run_tasks events.', 'cron' );
+                                } else {
+                                        error_log( 'WRE CRON → Cleared previously scheduled wre_cron_run_tasks events.' );
+                                }
+                        }
+
+                        $scheduled = wp_schedule_event( time(), 'wre_four_hours', 'wre_cron_run_tasks' );
+
+                        if ( $scheduled ) {
+                                if ( class_exists( 'WRE_Logger' ) ) {
+                                        \WRE_Logger::add( '[CRON] Registered wre_cron_run_tasks on 4-hour schedule.', 'cron' );
+                                } else {
+                                        error_log( 'WRE CRON → Registered wre_cron_run_tasks on 4-hour schedule.' );
+                                }
+                        } else {
+                                if ( class_exists( 'WRE_Logger' ) ) {
+                                        \WRE_Logger::add( '[CRON] Failed to register wre_cron_run_tasks on 4-hour schedule.', 'cron' );
+                                } else {
+                                        error_log( 'WRE CRON → Failed to register wre_cron_run_tasks on 4-hour schedule.' );
+                                }
+                        }
+                }
 
 		public static function run_tasks() {
 			if ( class_exists( 'WRE_Logger' ) ) {
@@ -72,6 +103,7 @@ if ( ! class_exists( 'WRE_Cron' ) ) {
                        }
 
                        $expired_users = array();
+                       $allowed_plans = array( 'trial', 'monthly', 'yearly', 'month', 'year' );
 
                        foreach ( (array) $rows as $row ) {
                                $user_id = isset( $row['user_id'] ) ? absint( $row['user_id'] ) : 0;
@@ -79,6 +111,64 @@ if ( ! class_exists( 'WRE_Cron' ) ) {
 
                                if ( $user_id <= 0 || $expiry <= 0 ) {
                                        continue;
+                               }
+
+                               $plan = get_user_meta( $user_id, 'wrpa_active_plan', true );
+                               $plan = is_scalar( $plan ) ? (string) $plan : '';
+                               $plan = trim( strtolower( $plan ) );
+
+                               if ( '' === $plan ) {
+                                       $fallback_plan = get_user_meta( $user_id, 'wrpa_membership_status', true );
+                                       $plan          = is_scalar( $fallback_plan ) ? (string) $fallback_plan : '';
+                                       $plan          = trim( strtolower( $plan ) );
+                               }
+
+                               $days_remaining = 0;
+
+                               if ( $expiry > $now ) {
+                                       $days_remaining = (int) ceil( ( $expiry - $now ) / DAY_IN_SECONDS );
+                               }
+
+                               if ( in_array( $plan, $allowed_plans, true ) ) {
+                                       $queued = \WRE_Email_Queue::queue_email(
+                                               $user_id,
+                                               'plan-reminder',
+                                               array(
+                                                       'days_remaining' => absint( $days_remaining ),
+                                                       'plan'           => $plan,
+                                               )
+                                       );
+
+                                       if ( $queued ) {
+                                               if ( class_exists( 'WRE_Logger' ) ) {
+                                                       \WRE_Logger::add(
+                                                               sprintf( '[CRON][SCAN] Queued plan-reminder for user #%d (plan=%s).', $user_id, $plan ),
+                                                               'cron'
+                                                       );
+                                               } else {
+                                                       error_log( sprintf( 'WRE CRON → Queued plan-reminder for user #%d (plan=%s).', $user_id, $plan ) );
+                                               }
+                                       } else {
+                                               if ( class_exists( 'WRE_Logger' ) ) {
+                                                       \WRE_Logger::add(
+                                                               sprintf( '[CRON][SCAN] Failed to queue plan-reminder for user #%d (plan=%s).', $user_id, $plan ),
+                                                               'cron'
+                                                       );
+                                               } else {
+                                                       error_log( sprintf( 'WRE CRON → Failed to queue plan-reminder for user #%d (plan=%s).', $user_id, $plan ) );
+                                               }
+                                       }
+                               } else {
+                                       if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+                                               if ( class_exists( 'WRE_Logger' ) ) {
+                                                       \WRE_Logger::add(
+                                                               sprintf( '[CRON][SCAN] Skipped user #%d (plan=%s).', $user_id, $plan ),
+                                                               'cron'
+                                                       );
+                                               } else {
+                                                       error_log( sprintf( 'WRE CRON → Skipped user #%d (plan=%s).', $user_id, $plan ) );
+                                               }
+                                       }
                                }
 
                                $expired_users[ $user_id ] = $expiry;
