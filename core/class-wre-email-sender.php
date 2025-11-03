@@ -44,6 +44,14 @@ if ( ! class_exists( 'WRE_Email_Sender' ) ) {
                 return false;
             }
 
+            if ( is_user_logged_in() ) {
+                $user = wp_get_current_user();
+
+                if ( $user && absint( $user->ID ) === $user_id ) {
+                    return true;
+                }
+            }
+
             $user = get_userdata( $user_id );
 
             if ( ! $user || empty( $user->user_email ) ) {
