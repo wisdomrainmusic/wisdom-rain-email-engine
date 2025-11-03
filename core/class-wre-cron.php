@@ -80,16 +80,17 @@ if ( ! class_exists( 'WRE_Cron' ) ) {
                protected static function scan_expired_users() {
                        global $wpdb;
 
-                       $now = current_time( 'timestamp', true );
+                       $now        = current_time( 'timestamp', true );
+                       $window_end = $now + DAY_IN_SECONDS;
 
                        $rows = $wpdb->get_results(
                                $wpdb->prepare(
                                        "SELECT user_id, CAST(meta_value AS UNSIGNED) AS expiry FROM {$wpdb->usermeta}
                                         WHERE meta_key = %s
                                         AND CAST(meta_value AS UNSIGNED) > 0
-                                        AND CAST(meta_value AS UNSIGNED) < %d",
+                                        AND CAST(meta_value AS UNSIGNED) <= %d",
                                        'wrpa_access_expiry',
-                                       $now
+                                       $window_end
                                ),
                                ARRAY_A
                        );
@@ -165,39 +166,68 @@ if ( ! class_exists( 'WRE_Cron' ) ) {
                                        continue;
                                }
 
-                               $days_remaining = 0;
-
-                               if ( $expiry > $now ) {
-                                       $days_remaining = (int) ceil( ( $expiry - $now ) / DAY_IN_SECONDS );
-                               }
+                               $diff = $expiry - $now;
 
                                if ( in_array( $plan_id, $allowed_plans, true ) ) {
-                                       $queued = \WRE_Email_Queue::queue_email(
-                                               $user_id,
-                                               'plan-reminder',
-                                               array(
-                                                       'days_remaining' => absint( $days_remaining ),
-                                                       'plan'           => $plan_id,
-                                               )
-                                       );
+                                       $template = '';
 
-                                       if ( $queued ) {
+                                       if ( $diff <= 0 ) {
                                                if ( class_exists( 'WRE_Logger' ) ) {
                                                        \WRE_Logger::add(
-                                                               sprintf( '[CRON][SCAN] Queued plan-reminder for user #%d (plan=%s).', $user_id, $plan_id ),
-                                                               'cron'
+                                                               sprintf( '[SCAN] Found expired user #%d (plan expired)', $user_id ),
+                                                               'CRON'
                                                        );
-                                               } else {
-                                                       error_log( sprintf( 'WRE CRON → Queued plan-reminder for user #%d (plan=%s).', $user_id, $plan_id ) );
                                                }
-                                       } else {
+
+                                               $template = 'plan-expired';
+                                       } elseif ( $diff <= DAY_IN_SECONDS ) {
                                                if ( class_exists( 'WRE_Logger' ) ) {
                                                        \WRE_Logger::add(
-                                                               sprintf( '[CRON][SCAN] Failed to queue plan-reminder for user #%d (plan=%s).', $user_id, $plan_id ),
-                                                               'cron'
+                                                               sprintf( '[SCAN] Found expiring soon user #%d (plan reminder)', $user_id ),
+                                                               'CRON'
                                                        );
+                                               }
+
+                                               $template = 'plan-reminder';
+                                       }
+
+                                       if ( '' !== $template ) {
+                                               $payload = array(
+                                                       'plan' => $plan_id,
+                                               );
+
+                                               if ( $diff > 0 ) {
+                                                       $payload['days_remaining'] = max( 0, (int) ceil( $diff / DAY_IN_SECONDS ) );
+                                               }
+
+                                               $queued = \WRE_Email_Queue::queue_email(
+                                                       $user_id,
+                                                       $template,
+                                                       $payload
+                                               );
+
+                                               if ( $queued ) {
+                                                       if ( class_exists( 'WRE_Logger' ) ) {
+                                                               \WRE_Logger::add(
+                                                                       sprintf( '[CRON][SCAN] Queued %s for user #%d (plan=%s).', $template, $user_id, $plan_id ),
+                                                                       'cron'
+                                                               );
+                                                       } else {
+                                                               error_log( sprintf( 'WRE CRON → Queued %s for user #%d (plan=%s).', $template, $user_id, $plan_id ) );
+                                                       }
                                                } else {
-                                                       error_log( sprintf( 'WRE CRON → Failed to queue plan-reminder for user #%d (plan=%s).', $user_id, $plan_id ) );
+                                                       if ( class_exists( 'WRE_Logger' ) ) {
+                                                               \WRE_Logger::add(
+                                                                       sprintf( '[CRON][SCAN] Failed to queue %s for user #%d (plan=%s).', $template, $user_id, $plan_id ),
+                                                                       'cron'
+                                                               );
+                                                       } else {
+                                                               error_log( sprintf( 'WRE CRON → Failed to queue %s for user #%d (plan=%s).', $template, $user_id, $plan_id ) );
+                                                       }
+                                               }
+
+                                               if ( $diff <= 0 ) {
+                                                       $expired_users[ $user_id ] = $expiry;
                                                }
                                        }
                                } else {
@@ -213,7 +243,9 @@ if ( ! class_exists( 'WRE_Cron' ) ) {
                                        }
                                }
 
-                               $expired_users[ $user_id ] = $expiry;
+                               if ( $diff <= 0 && ! isset( $expired_users[ $user_id ] ) ) {
+                                       $expired_users[ $user_id ] = $expiry;
+                               }
                        }
 
                        if ( empty( $expired_users ) ) {
