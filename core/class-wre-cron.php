@@ -13,10 +13,21 @@ if ( ! class_exists( 'WRE_Cron' ) ) {
 		const META_SENT_COMEBACK             = '_wre_sent_comeback_30d';
 
 		public static function init() {
+			add_filter(
+				'cron_schedules',
+				function( $schedules ) {
+					$schedules['wre_five_minutes'] = array(
+						'interval' => 300,
+						'display'  => __( 'Every 5 Minutes', 'wisdom-rain-email-engine' ),
+					);
+
+					return $schedules;
+				}
+			);
 			add_action( 'wre_cron_run_tasks', array( __CLASS__, 'run_tasks' ) );
 
 			if ( ! wp_next_scheduled( 'wre_cron_run_tasks' ) ) {
-				wp_schedule_event( strtotime( '01:00:00' ), 'twicedaily', 'wre_cron_run_tasks' );
+				wp_schedule_event( time(), 'wre_five_minutes', 'wre_cron_run_tasks' );
 			}
 		}
 
