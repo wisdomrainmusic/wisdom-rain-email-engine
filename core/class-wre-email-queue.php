@@ -98,6 +98,15 @@ if ( ! class_exists( 'WRE_Email_Queue' ) ) {
                 return false;
             }
 
+            // Skip if email already queued for this template & user within last 12 hours.
+            if ( self::was_recently_queued( $user_id, $template, 12 * HOUR_IN_SECONDS ) ) {
+                if ( class_exists( 'WRE_Logger' ) ) {
+                    \WRE_Logger::log( sprintf( '[QUEUE] Skipped duplicate email for user #%d (%s)', $user_id, $template ), 'QUEUE' );
+                }
+
+                return false;
+            }
+
             $job = array(
                 'job_id'   => self::generate_job_id(),
                 'user_id'  => $user_id,
@@ -116,11 +125,54 @@ if ( ! class_exists( 'WRE_Email_Queue' ) ) {
                 \WRE_Logger::increment( 'queue' );
             }
 
+            if ( class_exists( 'WRE_Logger' ) ) {
+                \WRE_Logger::log(
+                    sprintf(
+                        '[QUEUE] Queued %s email for user #%d (template: %s)',
+                        strtoupper( $template ),
+                        $user_id,
+                        $template
+                    ),
+                    'QUEUE'
+                );
+            }
+
             self::log( sprintf( 'Queued "%s" email for user #%d.', $template, $user_id ), 'queue' );
 
             self::process_queue();
 
             return true;
+        }
+
+        /**
+         * Determine whether the user/template combination was queued recently.
+         *
+         * @param int    $user_id User identifier.
+         * @param string $template Template slug.
+         * @param int    $window Number of seconds to look back.
+         *
+         * @return bool
+         */
+        public static function was_recently_queued( $user_id, $template, $window = 43200 ) {
+            global $wpdb;
+
+            if ( ! isset( $wpdb ) ) {
+                return false;
+            }
+
+            $table = $wpdb->prefix . 'wre_jobs';
+            $since = time() - absint( $window );
+
+            $exists = $wpdb->get_var(
+                $wpdb->prepare(
+                    "SELECT COUNT(*) FROM $table WHERE user_id=%d AND template=%s AND queued_at > %d",
+                    $user_id,
+                    $template,
+                    $since
+                )
+            );
+
+            return $exists > 0;
         }
 
         /**
