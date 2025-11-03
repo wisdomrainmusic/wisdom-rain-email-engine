@@ -110,6 +110,8 @@ if ( ! class_exists( 'WRE_Cron' ) ) {
                                'yearly'  => '2893',
                                'month'   => '2894',
                                'year'    => '2893',
+                               'expired' => '2895',
+                               'none'    => '2895',
                                '2895'    => '2895',
                                '2894'    => '2894',
                                '2893'    => '2893',
@@ -133,13 +135,15 @@ if ( ! class_exists( 'WRE_Cron' ) ) {
                                        $plan          = trim( strtolower( $plan ) );
                                }
 
-                               $plan_id = isset( $plan_map[ $plan ] ) ? $plan_map[ $plan ] : '';
+                               // Normalize and map plan key before expiry check.
+                               $plan_raw = $plan;
+                               $plan_id  = isset( $plan_map[ $plan_raw ] ) ? $plan_map[ $plan_raw ] : '';
 
                                if ( class_exists( 'WRE_Logger' ) ) {
                                        \WRE_Logger::add(
                                                sprintf(
                                                        '[SCAN] Normalized plan: %s → %s',
-                                                       '' !== $plan ? $plan : '(empty)',
+                                                       '' !== $plan_raw ? $plan_raw : '(empty)',
                                                        '' !== $plan_id ? $plan_id : 'null'
                                                ),
                                                'CRON'
@@ -147,6 +151,17 @@ if ( ! class_exists( 'WRE_Cron' ) ) {
                                }
 
                                if ( '' === $plan_id ) {
+                                       if ( class_exists( 'WRE_Logger' ) ) {
+                                               \WRE_Logger::add(
+                                                       sprintf(
+                                                               '[SCAN] Skipped user #%d: invalid or missing plan (%s)',
+                                                               $user_id,
+                                                               '' !== $plan_raw ? $plan_raw : '(empty)'
+                                                       ),
+                                                       'CRON'
+                                               );
+                                       }
+
                                        continue;
                                }
 
