@@ -101,7 +101,13 @@ if ( ! class_exists( 'WRE_Email_Queue' ) ) {
             // Skip if email already queued for this template & user within last 12 hours.
             if ( self::was_recently_queued( $user_id, $template, 12 * HOUR_IN_SECONDS ) ) {
                 if ( class_exists( 'WRE_Logger' ) ) {
-                    \WRE_Logger::log( sprintf( '[QUEUE] Skipped duplicate email for user #%d (%s)', $user_id, $template ), 'QUEUE' );
+                    $message = sprintf( '[QUEUE] Skipped duplicate email for user #%d (%s)', $user_id, $template );
+
+                    if ( method_exists( 'WRE_Logger', 'add' ) ) {
+                        \WRE_Logger::add( $message, 'QUEUE', array() );
+                    } elseif ( method_exists( 'WRE_Logger', 'log_entry' ) ) {
+                        \WRE_Logger::log_entry( $message, 'QUEUE' );
+                    }
                 }
 
                 return false;
@@ -126,15 +132,18 @@ if ( ! class_exists( 'WRE_Email_Queue' ) ) {
             }
 
             if ( class_exists( 'WRE_Logger' ) ) {
-                \WRE_Logger::log(
-                    sprintf(
-                        '[QUEUE] Queued %s email for user #%d (template: %s)',
-                        strtoupper( $template ),
-                        $user_id,
-                        $template
-                    ),
-                    'QUEUE'
+                $message = sprintf(
+                    '[QUEUE] Queued %s email for user #%d (template: %s)',
+                    strtoupper( $template ),
+                    $user_id,
+                    $template
                 );
+
+                if ( method_exists( 'WRE_Logger', 'add' ) ) {
+                    \WRE_Logger::add( $message, 'QUEUE', array() );
+                } elseif ( method_exists( 'WRE_Logger', 'log_entry' ) ) {
+                    \WRE_Logger::log_entry( $message, 'QUEUE' );
+                }
             }
 
             self::log( sprintf( 'Queued "%s" email for user #%d.', $template, $user_id ), 'queue' );
@@ -589,7 +598,7 @@ if ( ! class_exists( 'WRE_Email_Queue' ) ) {
          *
          * @return string
          */
-        protected static function generate_job_id() {
+        public static function generate_job_id() {
             return uniqid( 'wre_job_', true );
         }
 
@@ -748,7 +757,13 @@ if ( ! class_exists( 'WRE_Email_Queue' ) ) {
             $type = is_string( $type ) ? $type : 'queue';
 
             if ( class_exists( 'WRE_Logger' ) ) {
-                \WRE_Logger::add( $message, $type, self::sanitize_context( $context ) );
+                $context = self::sanitize_context( $context );
+
+                if ( method_exists( 'WRE_Logger', 'add' ) ) {
+                    \WRE_Logger::add( $message, $type, $context );
+                } elseif ( method_exists( 'WRE_Logger', 'log_entry' ) ) {
+                    \WRE_Logger::log_entry( $message, $type );
+                }
 
                 return;
             }
